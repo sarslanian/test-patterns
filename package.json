@@ -1,0 +1,46 @@
+{
+  "name": "test-patterns",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser broadcast test pattern generator. SMPTE bars, moving pattern, 1 kHz reference tone, timecode burn-in — rendered client-side with ffmpeg.wasm, no uploads.",
+  "scripts": {
+    "predev": "node scripts/copy-ffmpeg-assets.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/copy-ffmpeg-assets.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/core-mt": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "hls.js": "^1.6.16",
+    "lucide-react": "^0.577.0",
+    "next": "^16.2.10",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.1.7",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^3.4.17",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~5.7.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}
