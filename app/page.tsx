@@ -22,7 +22,6 @@ import {
   type AudioMode,
   type ContainerId,
   type FormatId,
-  type LogoPosition,
   type PatternId,
   AUDIO_MODES,
   CONTAINERS,
@@ -31,6 +30,7 @@ import {
   LOGO_ACCEPT,
   LOGO_MAX_BYTES,
   LOGO_OPACITY_PCT,
+  LOGO_POS_DEFAULT,
   LOGO_POSITIONS,
   LOGO_SIZE_PCT,
   MAX_DURATION_SEC,
@@ -123,7 +123,8 @@ export default function TestPatternPage() {
     name: string;
     url: string;
   } | null>(null);
-  const [logoPosition, setLogoPosition] = useState<LogoPosition>("br");
+  const [logoX, setLogoX] = useState<number>(LOGO_POS_DEFAULT.x);
+  const [logoY, setLogoY] = useState<number>(LOGO_POS_DEFAULT.y);
   const [logoSize, setLogoSize] = useState<number>(LOGO_SIZE_PCT.default);
   const [logoOpacity, setLogoOpacity] = useState<number>(LOGO_OPACITY_PCT.default);
   const [logoError, setLogoError] = useState<string | null>(null);
@@ -202,6 +203,9 @@ export default function TestPatternPage() {
 
   const isLipsync = pattern === "lipsync";
 
+  // The active quick-set preset, if the sliders currently sit on one of them.
+  const activePreset = LOGO_POSITIONS.find((p) => p.x === logoX && p.y === logoY);
+
   const summary = useMemo(() => {
     const mode = audioModeById(audio);
     // Keep line breaks at the " · " separators only: make spaces inside each
@@ -224,11 +228,11 @@ export default function TestPatternPage() {
     // User free text stays breakable so a long label can still wrap.
     if (label.trim()) parts.push(`“${label.trim()}”`);
     if (logo) {
-      const pos = LOGO_POSITIONS.find((p) => p.id === logoPosition)?.label ?? logoPosition;
-      parts.push(nb(`logo (${pos.toLowerCase()})`));
+      const pos = activePreset ? activePreset.label.toLowerCase() : `${logoX}%,${logoY}%`;
+      parts.push(nb(`logo (${pos})`));
     }
     return parts.join(" · ");
-  }, [pattern, format, durationSec, audio, burnTimecode, safeArea, label, isLipsync, logo, logoPosition]);
+  }, [pattern, format, durationSec, audio, burnTimecode, safeArea, label, isLipsync, logo, activePreset, logoX, logoY]);
 
   const handleGenerate = useCallback(async () => {
     setRendering(true);
@@ -250,7 +254,8 @@ export default function TestPatternPage() {
             ? {
                 data: logo.data,
                 ext: logo.ext,
-                position: logoPosition,
+                xPct: logoX,
+                yPct: logoY,
                 sizePct: logoSize,
                 opacity: logoOpacity / 100,
               }
@@ -278,7 +283,7 @@ export default function TestPatternPage() {
     } finally {
       setRendering(false);
     }
-  }, [pattern, format, durationSec, container, audio, burnTimecode, label, safeArea, logo, logoPosition, logoSize, logoOpacity, summary]);
+  }, [pattern, format, durationSec, container, audio, burnTimecode, label, safeArea, logo, logoX, logoY, logoSize, logoOpacity, summary]);
 
   const handleCancel = useCallback(() => {
     engine.terminate();
@@ -485,18 +490,59 @@ export default function TestPatternPage() {
                       Remove
                     </button>
                   </div>
-                  <div className="space-y-1.5">
-                    <span className="text-xs text-muted-foreground">Position</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Position</span>
+                      <span className="text-[11px] text-muted-foreground/70">
+                        {activePreset ? activePreset.label : `${logoX}%, ${logoY}%`}
+                      </span>
+                    </div>
                     <SegmentedGroup
-                      ariaLabel="Logo position"
+                      ariaLabel="Logo position preset"
                       items={LOGO_POSITIONS}
-                      value={logoPosition}
-                      onChange={setLogoPosition}
+                      value={(activePreset?.id ?? "none") as (typeof LOGO_POSITIONS)[number]["id"]}
+                      onChange={(id) => {
+                        const p = LOGO_POSITIONS.find((x) => x.id === id);
+                        if (p) {
+                          setLogoX(p.x);
+                          setLogoY(p.y);
+                        }
+                      }}
                       disabled={rendering}
                     />
+                    <label className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="w-16 shrink-0">Horizontal</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={logoX}
+                        onChange={(e) => setLogoX(Number(e.target.value))}
+                        disabled={rendering}
+                        className="flex-1 accent-[hsl(var(--primary))]"
+                      />
+                      <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
+                        {logoX}%
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="w-16 shrink-0">Vertical</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={logoY}
+                        onChange={(e) => setLogoY(Number(e.target.value))}
+                        disabled={rendering}
+                        className="flex-1 accent-[hsl(var(--primary))]"
+                      />
+                      <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
+                        {logoY}%
+                      </span>
+                    </label>
                   </div>
                   <label className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="w-14 shrink-0">Size</span>
+                    <span className="w-16 shrink-0">Size</span>
                     <input
                       type="range"
                       min={LOGO_SIZE_PCT.min}
@@ -511,7 +557,7 @@ export default function TestPatternPage() {
                     </span>
                   </label>
                   <label className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="w-14 shrink-0">Opacity</span>
+                    <span className="w-16 shrink-0">Opacity</span>
                     <input
                       type="range"
                       min={LOGO_OPACITY_PCT.min}

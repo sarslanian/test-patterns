@@ -17,13 +17,21 @@ export const FONT_FS_PATH = "font.ttf";
 
 export type LogoPosition = "tl" | "tr" | "center" | "bl" | "br";
 
-export const LOGO_POSITIONS: { id: LogoPosition; label: string }[] = [
-  { id: "tl", label: "Top L" },
-  { id: "tr", label: "Top R" },
-  { id: "center", label: "Center" },
-  { id: "bl", label: "Bot L" },
-  { id: "br", label: "Bot R" },
+/**
+ * Quick-set presets. `x`/`y` are the horizontal/vertical placement percentages
+ * the preset snaps the fine sliders to: 0 = flush to the safe edge, 50 =
+ * centered, 100 = flush to the opposite safe edge (see overlayPosition).
+ */
+export const LOGO_POSITIONS: { id: LogoPosition; label: string; x: number; y: number }[] = [
+  { id: "tl", label: "Top L", x: 0, y: 0 },
+  { id: "tr", label: "Top R", x: 100, y: 0 },
+  { id: "center", label: "Center", x: 50, y: 50 },
+  { id: "bl", label: "Bot L", x: 0, y: 100 },
+  { id: "br", label: "Bot R", x: 100, y: 100 },
 ];
+
+/** Default placement: bottom-right, matching the initial preset. */
+export const LOGO_POS_DEFAULT = { x: 100, y: 100 } as const;
 
 /** Accepted logo image MIME types (raster only — the wasm core has no SVG rasterizer) */
 export const LOGO_ACCEPT = "image/png,image/jpeg";
@@ -40,7 +48,10 @@ export interface LogoOptions {
   data: Uint8Array;
   /** File extension for the FS filename (e.g. "png", "jpg") */
   ext: string;
-  position: LogoPosition;
+  /** Horizontal placement across the safe area: 0 = left edge, 100 = right */
+  xPct: number;
+  /** Vertical placement across the safe area: 0 = top edge, 100 = bottom */
+  yPct: number;
   /** Logo width as a percentage of frame width */
   sizePct: number;
   /** Alpha multiplier, 0–1 */

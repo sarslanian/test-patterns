@@ -3,7 +3,6 @@ import {
   type ContainerId,
   type FormatId,
   type LogoOptions,
-  type LogoPosition,
   type PatternId,
   audioModeById,
   containerById,
@@ -115,22 +114,16 @@ function clamp(value: number, min: number, max: number, fallback: number): numbe
   return Math.min(max, Math.max(min, value));
 }
 
-/** overlay x:y expressions per position; corners are inset by `margin` pixels */
-function overlayPosition(pos: LogoPosition, margin: number): string {
-  const right = `main_w-overlay_w-${margin}`;
-  const bottom = `main_h-overlay_h-${margin}`;
-  switch (pos) {
-    case "tl":
-      return `x=${margin}:y=${margin}`;
-    case "tr":
-      return `x=${right}:y=${margin}`;
-    case "center":
-      return "x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2";
-    case "bl":
-      return `x=${margin}:y=${bottom}`;
-    case "br":
-      return `x=${right}:y=${bottom}`;
-  }
+/**
+ * overlay x:y expression for a placement percentage on each axis. Travel is
+ * inset by `margin` px on both sides, so 0 sits `margin` from the top/left
+ * edge, 100 sits `margin` from the bottom/right, and 50 is centered (the
+ * margins cancel). Percentages are kept as integer arithmetic in the filter.
+ */
+function overlayPosition(xPct: number, yPct: number, margin: number): string {
+  const x = `${margin}+(main_w-overlay_w-${2 * margin})*${xPct}/100`;
+  const y = `${margin}+(main_h-overlay_h-${2 * margin})*${yPct}/100`;
+  return `x=${x}:y=${y}`;
 }
 
 export function buildCommand(opts: GenerateOptions): BuiltCommand {
@@ -210,6 +203,8 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const logo = opts.logo;
   const sizePct = clamp(logo.sizePct, LOGO_SIZE_PCT.min, LOGO_SIZE_PCT.max, LOGO_SIZE_PCT.default);
   const opacity = clamp(logo.opacity, LOGO_OPACITY_PCT.min / 100, 1, 1);
+  const xPct = Math.round(clamp(logo.xPct, 0, 100, 100));
+  const yPct = Math.round(clamp(logo.yPct, 0, 100, 100));
   const logoW = Math.round((format.width * sizePct) / 100);
   const margin = Math.round((format.width * LOGO_MARGIN_PCT) / 100);
 
@@ -232,7 +227,7 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   }
   segments.push(`[1:v]${logoChain.join(",")}[lg]`);
   segments.push(
-    `${baseLabel}[lg]overlay=${overlayPosition(logo.position, margin)}:format=yuv420:shortest=1[ov]`
+    `${baseLabel}[lg]overlay=${overlayPosition(xPct, yPct, margin)}:format=yuv420:shortest=1[ov]`
   );
   segments.push(`[ov]${[...burnIns, "format=yuv420p"].join(",")}[v]`);
 

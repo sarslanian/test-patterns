@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCommand, clampDuration, escapeFilterValue, type GenerateOptions } from "./build-command";
-import { type LogoOptions, MAX_DURATION_SEC, MIN_DURATION_SEC } from "./presets";
+import { type LogoOptions, LOGO_POSITIONS, MAX_DURATION_SEC, MIN_DURATION_SEC } from "./presets";
 
 /** Minimal valid options; override per test. */
 function opts(over: Partial<GenerateOptions> = {}): GenerateOptions {
@@ -22,7 +22,8 @@ function logo(over: Partial<LogoOptions> = {}): LogoOptions {
   return {
     data: new Uint8Array([1, 2, 3]),
     ext: "png",
-    position: "br",
+    xPct: 100,
+    yPct: 100,
     sizePct: 15,
     opacity: 1,
     ...over,
@@ -132,28 +133,41 @@ describe("buildCommand — logo overlay path", () => {
     expect(graph).not.toContain("[base]");
   });
 
-  describe("position", () => {
-    const graphFor = (position: LogoOptions["position"]) => {
-      const args = buildCommand(opts({ logo: logo({ position }) })).passes[0];
+  describe("position (X/Y placement across the safe area)", () => {
+    // margin = round(1920 * 0.03) = 58, so travel is inset by 2*58 = 116.
+    const graphFor = (xPct: number, yPct: number) => {
+      const args = buildCommand(opts({ logo: logo({ xPct, yPct }) })).passes[0];
       return args[args.indexOf("-filter_complex") + 1];
     };
-    // margin = round(1920 * 0.03) = 58
-    it("top-left insets by the margin", () => {
-      expect(graphFor("tl")).toContain("overlay=x=58:y=58:");
+    it("0/0 sits one margin from the top-left edge", () => {
+      expect(graphFor(0, 0)).toContain(
+        "overlay=x=58+(main_w-overlay_w-116)*0/100:y=58+(main_h-overlay_h-116)*0/100:"
+      );
     });
-    it("top-right anchors to the right edge", () => {
-      expect(graphFor("tr")).toContain("overlay=x=main_w-overlay_w-58:y=58:");
+    it("100/100 sits one margin from the bottom-right edge", () => {
+      expect(graphFor(100, 100)).toContain(
+        "overlay=x=58+(main_w-overlay_w-116)*100/100:y=58+(main_h-overlay_h-116)*100/100:"
+      );
     });
-    it("bottom-left anchors to the bottom edge", () => {
-      expect(graphFor("bl")).toContain("overlay=x=58:y=main_h-overlay_h-58:");
+    it("50/50 centers on both axes", () => {
+      expect(graphFor(50, 50)).toContain(
+        "overlay=x=58+(main_w-overlay_w-116)*50/100:y=58+(main_h-overlay_h-116)*50/100:"
+      );
     });
-    it("bottom-right anchors to both far edges", () => {
-      expect(graphFor("br")).toContain("overlay=x=main_w-overlay_w-58:y=main_h-overlay_h-58:");
+    it("supports arbitrary integer percentages", () => {
+      expect(graphFor(72, 40)).toContain(
+        "overlay=x=58+(main_w-overlay_w-116)*72/100:y=58+(main_h-overlay_h-116)*40/100:"
+      );
     });
-    it("center ignores the margin and centers on both axes", () => {
-      const g = graphFor("center");
-      expect(g).toContain("overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:");
-      expect(g).not.toContain("58");
+    it("rounds and clamps out-of-range percentages to 0–100", () => {
+      const g = graphFor(150, -10);
+      expect(g).toContain("*100/100"); // x clamped up
+      expect(g).toContain("*0/100"); // y clamped down
+    });
+    it("matches every quick-set preset's x/y mapping", () => {
+      for (const p of LOGO_POSITIONS) {
+        expect(graphFor(p.x, p.y)).toContain(`*${p.x}/100:y=58+(main_h-overlay_h-116)*${p.y}/100:`);
+      }
     });
   });
 
