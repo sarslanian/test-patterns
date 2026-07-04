@@ -204,22 +204,28 @@ export default function TestPatternPage() {
 
   const summary = useMemo(() => {
     const mode = audioModeById(audio);
+    // Keep line breaks at the " · " separators only: make spaces inside each
+    // fixed descriptor non-breaking so tokens like "logo (bot l)" don't split.
+    const nb = (s: string) => s.replace(/ /g, "\u00A0");
     const parts = [
-      patternById(pattern).label,
+      nb(patternById(pattern).label),
       formatById(format).label,
       `${durationSec}s`,
-      isLipsync
-        ? `beep ${mode.amplitude != null ? mode.label : "−20 dBFS"}`
-        : mode.amplitude != null
-          ? `1 kHz ${mode.label}`
-          : "silence",
+      nb(
+        isLipsync
+          ? `beep ${mode.amplitude != null ? mode.label : "−20 dBFS"}`
+          : mode.amplitude != null
+            ? `1 kHz ${mode.label}`
+            : "silence"
+      ),
     ];
     if (burnTimecode) parts.push("timecode");
-    if (safeArea) parts.push("safe areas");
+    if (safeArea) parts.push(nb("safe areas"));
+    // User free text stays breakable so a long label can still wrap.
     if (label.trim()) parts.push(`“${label.trim()}”`);
     if (logo) {
       const pos = LOGO_POSITIONS.find((p) => p.id === logoPosition)?.label ?? logoPosition;
-      parts.push(`logo (${pos.toLowerCase()})`);
+      parts.push(nb(`logo (${pos.toLowerCase()})`));
     }
     return parts.join(" · ");
   }, [pattern, format, durationSec, audio, burnTimecode, safeArea, label, isLipsync, logo, logoPosition]);
