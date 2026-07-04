@@ -6,6 +6,7 @@ import {
   Cpu,
   Download,
   Film,
+  ImagePlus,
   Loader2,
   Square,
   Tv,
@@ -21,11 +22,17 @@ import {
   type AudioMode,
   type ContainerId,
   type FormatId,
+  type LogoPosition,
   type PatternId,
   AUDIO_MODES,
   CONTAINERS,
   DEFAULT_DURATION_SEC,
   FORMATS,
+  LOGO_ACCEPT,
+  LOGO_MAX_BYTES,
+  LOGO_OPACITY_PCT,
+  LOGO_POSITIONS,
+  LOGO_SIZE_PCT,
   MAX_DURATION_SEC,
   MIN_DURATION_SEC,
   PATTERNS,
@@ -110,6 +117,19 @@ export default function TestPatternPage() {
   const [safeArea, setSafeArea] = useState(false);
   const [label, setLabel] = useState("");
 
+  const [logo, setLogo] = useState<{
+    data: Uint8Array;
+    ext: string;
+    name: string;
+    url: string;
+  } | null>(null);
+  const [logoPosition, setLogoPosition] = useState<LogoPosition>("br");
+  const [logoSize, setLogoSize] = useState<number>(LOGO_SIZE_PCT.default);
+  const [logoOpacity, setLogoOpacity] = useState<number>(LOGO_OPACITY_PCT.default);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const logoUrlRef = useRef<string | null>(null);
+
   const [engineState, setEngineState] = useState<EngineState>("loading");
   const [threadMode, setThreadMode] = useState<ThreadMode>("single");
   const [engineError, setEngineError] = useState<string | null>(null);
@@ -138,8 +158,40 @@ export default function TestPatternPage() {
     void loadEngine();
     return () => {
       if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
+      if (logoUrlRef.current) URL.revokeObjectURL(logoUrlRef.current);
     };
   }, [loadEngine]);
+
+  const clearLogo = useCallback(() => {
+    if (logoUrlRef.current) URL.revokeObjectURL(logoUrlRef.current);
+    logoUrlRef.current = null;
+    setLogo(null);
+    setLogoError(null);
+    if (logoInputRef.current) logoInputRef.current.value = "";
+  }, []);
+
+  const handleLogoSelect = useCallback(
+    async (fileList: FileList | null) => {
+      const selected = fileList?.[0];
+      if (!selected) return;
+      setLogoError(null);
+      if (!LOGO_ACCEPT.split(",").includes(selected.type)) {
+        setLogoError("Use a PNG or JPEG image.");
+        return;
+      }
+      if (selected.size > LOGO_MAX_BYTES) {
+        setLogoError(`Image is too large (max ${LOGO_MAX_BYTES / (1024 * 1024)} MB).`);
+        return;
+      }
+      const data = new Uint8Array(await selected.arrayBuffer());
+      const ext = selected.type === "image/png" ? "png" : "jpg";
+      if (logoUrlRef.current) URL.revokeObjectURL(logoUrlRef.current);
+      const url = URL.createObjectURL(selected);
+      logoUrlRef.current = url;
+      setLogo({ data, ext, name: selected.name, url });
+    },
+    []
+  );
 
   const durationNum = Number(durationText);
   const durationSec = clampDuration(durationNum);
@@ -165,8 +217,12 @@ export default function TestPatternPage() {
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push("safe areas");
     if (label.trim()) parts.push(`“${label.trim()}”`);
+    if (logo) {
+      const pos = LOGO_POSITIONS.find((p) => p.id === logoPosition)?.label ?? logoPosition;
+      parts.push(`logo (${pos.toLowerCase()})`);
+    }
     return parts.join(" · ");
-  }, [pattern, format, durationSec, audio, burnTimecode, safeArea, label, isLipsync]);
+  }, [pattern, format, durationSec, audio, burnTimecode, safeArea, label, isLipsync, logo, logoPosition]);
 
   const handleGenerate = useCallback(async () => {
     setRendering(true);
@@ -184,6 +240,15 @@ export default function TestPatternPage() {
           burnTimecode,
           label,
           safeArea,
+          logo: logo
+            ? {
+                data: logo.data,
+                ext: logo.ext,
+                position: logoPosition,
+                sizePct: logoSize,
+                opacity: logoOpacity / 100,
+              }
+            : undefined,
         },
         {
           onProgress: setProgress,
@@ -207,7 +272,7 @@ export default function TestPatternPage() {
     } finally {
       setRendering(false);
     }
-  }, [pattern, format, durationSec, container, audio, burnTimecode, label, safeArea, summary]);
+  }, [pattern, format, durationSec, container, audio, burnTimecode, label, safeArea, logo, logoPosition, logoSize, logoOpacity, summary]);
 
   const handleCancel = useCallback(() => {
     engine.terminate();
@@ -380,6 +445,108 @@ export default function TestPatternPage() {
                 placeholder="Optional label, e.g. GAME 4 SRT TEST — CH 2"
                 spellCheck={false}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                Logo overlay
+              </Label>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept={LOGO_ACCEPT}
+                className="sr-only"
+                onChange={(e) => void handleLogoSelect(e.target.files)}
+              />
+              {logo ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 rounded-md border border-border/80 bg-muted/30 px-3 py-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={logo.url}
+                      alt=""
+                      className="h-10 w-10 shrink-0 rounded border border-border bg-[repeating-conic-gradient(#0000_0_25%,#3334_0_50%)_50%/12px_12px] object-contain"
+                    />
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                      {logo.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearLogo}
+                      disabled={rendering}
+                      className="shrink-0 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-muted-foreground">Position</span>
+                    <SegmentedGroup
+                      ariaLabel="Logo position"
+                      items={LOGO_POSITIONS}
+                      value={logoPosition}
+                      onChange={setLogoPosition}
+                      disabled={rendering}
+                    />
+                  </div>
+                  <label className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="w-14 shrink-0">Size</span>
+                    <input
+                      type="range"
+                      min={LOGO_SIZE_PCT.min}
+                      max={LOGO_SIZE_PCT.max}
+                      value={logoSize}
+                      onChange={(e) => setLogoSize(Number(e.target.value))}
+                      disabled={rendering}
+                      className="flex-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
+                      {logoSize}%
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="w-14 shrink-0">Opacity</span>
+                    <input
+                      type="range"
+                      min={LOGO_OPACITY_PCT.min}
+                      max={LOGO_OPACITY_PCT.max}
+                      value={logoOpacity}
+                      onChange={(e) => setLogoOpacity(Number(e.target.value))}
+                      disabled={rendering}
+                      className="flex-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span className="w-9 shrink-0 text-right tabular-nums text-foreground">
+                      {logoOpacity}%
+                    </span>
+                  </label>
+                  {threadMode === "multi" ? (
+                    <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
+                      Compositing a logo needs the single-threaded core, so these renders are
+                      slower than logo-free ones.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={rendering}
+                  className="w-full gap-2"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  Upload PNG or JPEG
+                </Button>
+              )}
+              {logoError ? (
+                <p className="text-xs text-destructive">{logoError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Composited over the pattern, under the timecode/label. Stays in your
+                  browser — never uploaded.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-x-6 gap-y-4">

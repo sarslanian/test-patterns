@@ -15,6 +15,44 @@ export type AudioMode = "tone-20" | "tone-18" | "tone-12" | "silence";
 /** Path the burn-in font is written to inside ffmpeg's virtual FS */
 export const FONT_FS_PATH = "font.ttf";
 
+export type LogoPosition = "tl" | "tr" | "center" | "bl" | "br";
+
+export const LOGO_POSITIONS: { id: LogoPosition; label: string }[] = [
+  { id: "tl", label: "Top L" },
+  { id: "tr", label: "Top R" },
+  { id: "center", label: "Center" },
+  { id: "bl", label: "Bot L" },
+  { id: "br", label: "Bot R" },
+];
+
+/** Accepted logo image MIME types (raster only — the wasm core has no SVG rasterizer) */
+export const LOGO_ACCEPT = "image/png,image/jpeg";
+/** Reject uploads larger than this — the wasm core is memory-tight */
+export const LOGO_MAX_BYTES = 5 * 1024 * 1024;
+
+export const LOGO_SIZE_PCT = { min: 5, max: 40, default: 15 } as const;
+export const LOGO_OPACITY_PCT = { min: 20, max: 100, default: 100 } as const;
+/** Logo inset from the frame edge, as a percentage of frame width */
+export const LOGO_MARGIN_PCT = 3;
+
+export interface LogoOptions {
+  /** Raw image bytes, written to the virtual FS per render */
+  data: Uint8Array;
+  /** File extension for the FS filename (e.g. "png", "jpg") */
+  ext: string;
+  position: LogoPosition;
+  /** Logo width as a percentage of frame width */
+  sizePct: number;
+  /** Alpha multiplier, 0–1 */
+  opacity: number;
+}
+
+/** Path an uploaded logo is written to inside ffmpeg's virtual FS */
+export function logoFsPath(ext: string): string {
+  const clean = ext.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return `logo.${clean || "png"}`;
+}
+
 export interface AudioModeDef {
   id: AudioMode;
   label: string;
