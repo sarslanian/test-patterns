@@ -28,6 +28,7 @@ import {
   DEFAULT_DURATION_SEC,
   FORMATS,
   LOGO_ACCEPT,
+  LOGO_MARGIN_PCT,
   LOGO_MAX_BYTES,
   LOGO_OPACITY_PCT,
   LOGO_POS_DEFAULT,
@@ -41,7 +42,7 @@ import {
   formatById,
   patternById,
 } from "@/lib/presets";
-import { clampDuration } from "@/lib/build-command";
+import { clampDuration, logoLayoutFractions } from "@/lib/build-command";
 import { FfmpegEngine, type ThreadMode } from "@/lib/ffmpeg-client";
 
 const engine = new FfmpegEngine();
@@ -107,6 +108,114 @@ function SegmentedGroup<T extends string>({
   );
 }
 
+const clampNum = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/**
+ * Live, aspect-correct preview of where the logo lands and how big it is.
+ * Geometry comes from logoLayoutFractions (the same math as the ffmpeg
+ * overlay), and the logo is draggable to set position by eye.
+ */
+function LogoPlacementPreview({
+  url,
+  logoAspect,
+  frameAspect,
+  xPct,
+  yPct,
+  sizePct,
+  disabled,
+  onChange,
+}: {
+  url: string;
+  logoAspect: number;
+  frameAspect: number;
+  xPct: number;
+  yPct: number;
+  sizePct: number;
+  disabled?: boolean;
+  onChange: (x: number, y: number) => void;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const grabRef = useRef<{ offX: number; offY: number } | null>(null);
+
+  const layout = logoLayoutFractions(xPct, yPct, sizePct, logoAspect, frameAspect);
+  const marginX = LOGO_MARGIN_PCT / 100;
+  const marginY = marginX * frameAspect;
+  const travelX = Math.max(1e-6, 1 - layout.width - 2 * marginX);
+  const travelY = Math.max(1e-6, 1 - layout.height - 2 * marginY);
+
+  const applyFromPointer = (clientX: number, clientY: number) => {
+    const box = boxRef.current;
+    const grab = grabRef.current;
+    if (!box || !grab) return;
+    const r = box.getBoundingClientRect();
+    const leftFrac = (clientX - r.left) / r.width - grab.offX;
+    const topFrac = (clientY - r.top) / r.height - grab.offY;
+    const x = ((leftFrac - marginX) / travelX) * 100;
+    const y = ((topFrac - marginY) / travelY) * 100;
+    onChange(Math.round(clampNum(x, 0, 100)), Math.round(clampNum(y, 0, 100)));
+  };
+
+  return (
+    <div
+      ref={boxRef}
+      className="relative w-full select-none overflow-hidden rounded-md border border-border bg-black"
+      style={{ aspectRatio: String(frameAspect) }}
+    >
+      {/* 3% safe-margin guide — the bounds of the logo's travel */}
+      <div
+        className="pointer-events-none absolute rounded-sm border border-dashed border-white/15"
+        style={{
+          left: `${marginX * 100}%`,
+          right: `${marginX * 100}%`,
+          top: `${marginY * 100}%`,
+          bottom: `${marginY * 100}%`,
+        }}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        draggable={false}
+        onPointerDown={(e) => {
+          if (disabled) return;
+          const box = boxRef.current;
+          if (!box) return;
+          const r = box.getBoundingClientRect();
+          grabRef.current = {
+            offX: (e.clientX - r.left) / r.width - layout.left,
+            offY: (e.clientY - r.top) / r.height - layout.top,
+          };
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {}
+        }}
+        onPointerMove={(e) => {
+          if (grabRef.current) applyFromPointer(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          grabRef.current = null;
+          try {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          } catch {}
+        }}
+        onPointerCancel={() => {
+          grabRef.current = null;
+        }}
+        className={cn(
+          "absolute touch-none object-contain",
+          disabled ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
+        )}
+        style={{
+          left: `${layout.left * 100}%`,
+          top: `${layout.top * 100}%`,
+          width: `${layout.width * 100}%`,
+          height: "auto",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function TestPatternPage() {
   const [pattern, setPattern] = useState<PatternId>("smptehdbars");
   const [format, setFormat] = useState<FormatId>("1080p5994");
@@ -122,6 +231,8 @@ export default function TestPatternPage() {
     ext: string;
     name: string;
     url: string;
+    /** Image height / width — drives the accurate preview box */
+    aspect: number;
   } | null>(null);
   const [logoX, setLogoX] = useState<number>(LOGO_POS_DEFAULT.x);
   const [logoY, setLogoY] = useState<number>(LOGO_POS_DEFAULT.y);
@@ -189,7 +300,15 @@ export default function TestPatternPage() {
       if (logoUrlRef.current) URL.revokeObjectURL(logoUrlRef.current);
       const url = URL.createObjectURL(selected);
       logoUrlRef.current = url;
-      setLogo({ data, ext, name: selected.name, url });
+      // Measure the natural aspect so the placement preview is dimensionally
+      // accurate (ffmpeg's scale=W:-1 preserves this same ratio).
+      const aspect = await new Promise<number>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1);
+        img.onerror = () => resolve(1);
+        img.src = url;
+      });
+      setLogo({ data, ext, name: selected.name, url, aspect });
     },
     []
   );
@@ -490,6 +609,22 @@ export default function TestPatternPage() {
                       Remove
                     </button>
                   </div>
+                  <LogoPlacementPreview
+                    url={logo.url}
+                    logoAspect={logo.aspect}
+                    frameAspect={formatById(format).width / formatById(format).height}
+                    xPct={logoX}
+                    yPct={logoY}
+                    sizePct={logoSize}
+                    disabled={rendering}
+                    onChange={(x, y) => {
+                      setLogoX(x);
+                      setLogoY(y);
+                    }}
+                  />
+                  <p className="text-[11px] text-muted-foreground/70">
+                    Drag the logo to position it; the dashed guide is the 3% safe margin.
+                  </p>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">Position</span>

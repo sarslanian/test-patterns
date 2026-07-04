@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCommand, clampDuration, escapeFilterValue, type GenerateOptions } from "./build-command";
+import {
+  buildCommand,
+  clampDuration,
+  escapeFilterValue,
+  logoLayoutFractions,
+  type GenerateOptions,
+} from "./build-command";
 import { type LogoOptions, LOGO_POSITIONS, MAX_DURATION_SEC, MIN_DURATION_SEC } from "./presets";
 
 /** Minimal valid options; override per test. */
@@ -217,6 +223,42 @@ describe("output metadata", () => {
   it("adds +faststart only for mp4", () => {
     expect(buildCommand(opts({ container: "mp4" })).passes[0].join(" ")).toContain("+faststart");
     expect(buildCommand(opts({ container: "ts" })).passes[0].join(" ")).not.toContain("+faststart");
+  });
+});
+
+describe("logoLayoutFractions (UI preview mirror of overlayPosition)", () => {
+  const AR = 16 / 9; // frame aspect for all current formats
+  const square = 1; // logo height/width
+
+  it("width fraction tracks sizePct; a square logo's height accounts for aspect", () => {
+    const l = logoLayoutFractions(50, 50, 15, square, AR);
+    expect(l.width).toBeCloseTo(0.15, 5);
+    expect(l.height).toBeCloseTo(0.15 * AR, 5); // square logo is taller in height-fraction
+  });
+
+  it("0/0 sits one margin (3% of width) from the top-left", () => {
+    const l = logoLayoutFractions(0, 0, 15, square, AR);
+    expect(l.left).toBeCloseTo(0.03, 5);
+    expect(l.top).toBeCloseTo(0.03 * AR, 5); // width-based margin is taller vertically
+  });
+
+  it("50/50 centers the logo box on both axes", () => {
+    const l = logoLayoutFractions(50, 50, 15, square, AR);
+    expect(l.left + l.width / 2).toBeCloseTo(0.5, 5);
+    expect(l.top + l.height / 2).toBeCloseTo(0.5, 5);
+  });
+
+  it("100/100 sits one margin from the bottom-right", () => {
+    const l = logoLayoutFractions(100, 100, 15, square, AR);
+    expect(l.left + l.width).toBeCloseTo(1 - 0.03, 5);
+    expect(l.top + l.height).toBeCloseTo(1 - 0.03 * AR, 5);
+  });
+
+  it("clamps out-of-range percentages", () => {
+    const lo = logoLayoutFractions(-50, -50, 15, square, AR);
+    const hi = logoLayoutFractions(200, 200, 15, square, AR);
+    expect(lo.left).toBeCloseTo(0.03, 5);
+    expect(hi.left + hi.width).toBeCloseTo(1 - 0.03, 5);
   });
 });
 

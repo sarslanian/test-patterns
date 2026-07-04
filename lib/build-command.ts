@@ -126,6 +126,38 @@ function overlayPosition(xPct: number, yPct: number, margin: number): string {
   return `x=${x}:y=${y}`;
 }
 
+export interface LogoLayout {
+  /** All values are fractions (0–1) of the frame's width/height. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Logo box as fractions of the frame, mirroring {@link overlayPosition} exactly
+ * so a UI preview matches the rendered output. `logoAspect` is the image's
+ * height/width; `frameAspect` its width/height. The 3% margin is a fraction of
+ * frame *width*, so it converts to a taller fraction on the vertical axis.
+ */
+export function logoLayoutFractions(
+  xPct: number,
+  yPct: number,
+  sizePct: number,
+  logoAspect: number,
+  frameAspect: number
+): LogoLayout {
+  const marginX = LOGO_MARGIN_PCT / 100;
+  const marginY = marginX * frameAspect;
+  const width = clamp(sizePct, LOGO_SIZE_PCT.min, LOGO_SIZE_PCT.max, LOGO_SIZE_PCT.default) / 100;
+  const height = width * logoAspect * frameAspect;
+  const travelX = Math.max(0, 1 - width - 2 * marginX);
+  const travelY = Math.max(0, 1 - height - 2 * marginY);
+  const left = marginX + (travelX * clamp(xPct, 0, 100, 100)) / 100;
+  const top = marginY + (travelY * clamp(yPct, 0, 100, 100)) / 100;
+  return { left, top, width, height };
+}
+
 export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const pattern = patternById(opts.pattern);
   const format = formatById(opts.format);
