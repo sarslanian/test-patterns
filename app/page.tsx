@@ -43,7 +43,7 @@ import {
   formatById,
   patternById,
 } from "@/lib/presets";
-import { clampDuration, logoLayoutFractions } from "@/lib/build-command";
+import { clamp, clampDuration, logoLayoutFractions } from "@/lib/build-command";
 import { FfmpegEngine, type ThreadMode } from "@/lib/ffmpeg-client";
 
 const engine = new FfmpegEngine();
@@ -158,8 +158,6 @@ function AccordionSection({
   );
 }
 
-const clampNum = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-
 /**
  * Live, aspect-correct preview of where the logo lands and how big it is.
  * Geometry comes from logoLayoutFractions (the same math as the ffmpeg
@@ -202,7 +200,7 @@ function LogoPlacementPreview({
     const topFrac = (clientY - r.top) / r.height - grab.offY;
     const x = ((leftFrac - marginX) / travelX) * 100;
     const y = ((topFrac - marginY) / travelY) * 100;
-    onChange(Math.round(clampNum(x, 0, 100)), Math.round(clampNum(y, 0, 100)));
+    onChange(Math.round(clamp(x, 0, 100, 100)), Math.round(clamp(y, 0, 100, 100)));
   };
 
   return (
@@ -477,6 +475,10 @@ export default function TestPatternPage() {
     } catch (err) {
       setRenderError(err instanceof Error ? err.message : String(err));
     } finally {
+      // generate() may have silently swapped cores (logo renders force the
+      // single-threaded core) — resync the badge/warnings to what's actually
+      // loaded rather than what was loaded before this render started.
+      if (engine.activeMode) setThreadMode(engine.activeMode);
       setRendering(false);
     }
   }, [pattern, format, durationSec, container, audio, burnTimecode, label, safeArea, logo, logoX, logoY, logoSize, logoOpacity, summary]);
@@ -490,14 +492,18 @@ export default function TestPatternPage() {
 
   const busy = rendering || engineState === "loading";
 
+  // Split once per render and reused below (download name, JSX placeholder,
+  // extension badge) instead of re-parsing file.name at each call site.
+  const fileNameParts = splitExtension(file?.name ?? "");
+
   // Sanitized custom name + the container's extension; falls back to the
   // selection-derived default if the field is empty or only invalid chars.
-  const downloadName = useMemo(() => {
-    if (!file) return "";
-    const { base: defaultBase, ext } = splitExtension(file.name);
-    const base = sanitizeFileName(fileNameInput).trim() || defaultBase;
-    return ext ? `${base}.${ext}` : base;
-  }, [file, fileNameInput]);
+  const downloadBase = sanitizeFileName(fileNameInput).trim() || fileNameParts.base;
+  const downloadName = !file
+    ? ""
+    : fileNameParts.ext
+      ? `${downloadBase}.${fileNameParts.ext}`
+      : downloadBase;
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
@@ -962,11 +968,11 @@ export default function TestPatternPage() {
                     aria-label="File name"
                     maxLength={120}
                     spellCheck={false}
-                    placeholder={splitExtension(file.name).base}
+                    placeholder={fileNameParts.base}
                     className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 font-mono text-xs text-muted-foreground shadow-none focus-visible:ring-1"
                   />
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                    .{splitExtension(file.name).ext} · {formatBytes(file.sizeBytes)}
+                    .{fileNameParts.ext} · {formatBytes(file.sizeBytes)}
                   </span>
                 </div>
               ) : (

@@ -41,20 +41,17 @@ const countArg = (args: string[], token: string) => args.filter((a) => a === tok
 
 describe("buildCommand — no-logo fast path", () => {
   it("uses a single lavfi input and a -vf chain (MT-safe shape)", () => {
-    const { passes, intermediateNames } = buildCommand(opts());
-    expect(passes).toHaveLength(1);
-    const args = passes[0];
+    const { args } = buildCommand(opts());
     // Exactly one input, no second input, no filter_complex — the multi-thread
     // core deadlocks on any two-input graph, so this path must stay single-input.
     expect(countArg(args, "-i")).toBe(1);
     expect(args).toContain("-vf");
     expect(args).not.toContain("-filter_complex");
     expect(args).not.toContain("-loop");
-    expect(intermediateNames).toEqual([]);
   });
 
   it("fuses the two sources into one lavfi input with [out0]/[out1] pads", () => {
-    const args = buildCommand(opts()).passes[0];
+    const args = buildCommand(opts()).args;
     const input = args[args.indexOf("-i") + 1];
     expect(input).toContain("[out0]");
     expect(input).toContain("[out1]");
@@ -65,7 +62,7 @@ describe("buildCommand — no-logo fast path", () => {
   it("orders filters: prefilters → burn-ins → format=yuv420p", () => {
     const args = buildCommand(
       opts({ pattern: "testsrc", burnTimecode: true, label: "HELLO", safeArea: true })
-    ).passes[0];
+    ).args;
     const vf = args[args.indexOf("-vf") + 1];
     const tc = vf.indexOf("timecode");
     const lbl = vf.indexOf("HELLO");
@@ -77,14 +74,14 @@ describe("buildCommand — no-logo fast path", () => {
   });
 
   it("adds interlace filter and interlaced coding flags for 1080i", () => {
-    const args = buildCommand(opts({ format: "1080i5994" })).passes[0];
+    const args = buildCommand(opts({ format: "1080i5994" })).args;
     expect(args[args.indexOf("-vf") + 1]).toContain("interlace=scan=tff");
     expect(args.join(" ")).toContain("-flags +ildct+ilme");
   });
 
   it("omits burn-ins when disabled", () => {
-    const vf = buildCommand(opts()).passes[0][
-      buildCommand(opts()).passes[0].indexOf("-vf") + 1
+    const vf = buildCommand(opts()).args[
+      buildCommand(opts()).args.indexOf("-vf") + 1
     ];
     expect(vf).not.toContain("timecode");
     expect(vf).not.toContain("drawtext");
@@ -92,10 +89,8 @@ describe("buildCommand — no-logo fast path", () => {
 });
 
 describe("buildCommand — logo overlay path", () => {
-  it("is a single pass with a second looped image input and filter_complex", () => {
-    const { passes, intermediateNames } = buildCommand(opts({ logo: logo() }));
-    expect(passes).toHaveLength(1);
-    const args = passes[0];
+  it("uses a second looped image input composited via filter_complex", () => {
+    const { args } = buildCommand(opts({ logo: logo() }));
     expect(countArg(args, "-i")).toBe(2); // lavfi + logo
     expect(args.join(" ")).toContain("-loop 1 -i logo.png");
     expect(args).toContain("-filter_complex");
@@ -103,11 +98,10 @@ describe("buildCommand — logo overlay path", () => {
     // maps the filtered video and the lavfi audio pad
     expect(args.join(" ")).toContain("-map [v]");
     expect(args.join(" ")).toContain("-map 0:a");
-    expect(intermediateNames).toEqual([]);
   });
 
   it("scales the logo relative to frame width and overlays in yuv420", () => {
-    const fc = buildCommand(opts({ logo: logo({ sizePct: 15 }) })).passes[0];
+    const fc = buildCommand(opts({ logo: logo({ sizePct: 15 }) })).args;
     const graph = fc[fc.indexOf("-filter_complex") + 1];
     expect(graph).toContain("[1:v]scale=288:-1[lg]"); // 1920 * 0.15
     expect(graph).toContain("overlay=");
@@ -118,7 +112,7 @@ describe("buildCommand — logo overlay path", () => {
   it("runs prefilters before the overlay and burn-ins after it", () => {
     const fc = buildCommand(
       opts({ pattern: "testsrc", burnTimecode: true, logo: logo() })
-    ).passes[0];
+    ).args;
     const graph = fc[fc.indexOf("-filter_complex") + 1];
     // prefilters feed [base] which then feeds the overlay
     expect(graph).toContain("[0:v]scale=out_color_matrix=bt709,format=yuv420p[base]");
@@ -132,8 +126,8 @@ describe("buildCommand — logo overlay path", () => {
   });
 
   it("reads [0:v] directly when the pattern has no prefilters", () => {
-    const graph = buildCommand(opts({ logo: logo() })).passes[0][
-      buildCommand(opts({ logo: logo() })).passes[0].indexOf("-filter_complex") + 1
+    const graph = buildCommand(opts({ logo: logo() })).args[
+      buildCommand(opts({ logo: logo() })).args.indexOf("-filter_complex") + 1
     ];
     expect(graph).toContain("[0:v][lg]overlay=");
     expect(graph).not.toContain("[base]");
@@ -142,7 +136,7 @@ describe("buildCommand — logo overlay path", () => {
   describe("position (X/Y placement across the safe area)", () => {
     // margin = round(1920 * 0.03) = 58, so travel is inset by 2*58 = 116.
     const graphFor = (xPct: number, yPct: number) => {
-      const args = buildCommand(opts({ logo: logo({ xPct, yPct }) })).passes[0];
+      const args = buildCommand(opts({ logo: logo({ xPct, yPct }) })).args;
       return args[args.indexOf("-filter_complex") + 1];
     };
     it("0/0 sits one margin from the top-left edge", () => {
@@ -179,7 +173,7 @@ describe("buildCommand — logo overlay path", () => {
 
   describe("opacity", () => {
     const graphFor = (opacity: number) => {
-      const args = buildCommand(opts({ logo: logo({ opacity }) })).passes[0];
+      const args = buildCommand(opts({ logo: logo({ opacity }) })).args;
       return args[args.indexOf("-filter_complex") + 1];
     };
     it("adds an alpha fade only when translucent", () => {
@@ -193,7 +187,7 @@ describe("buildCommand — logo overlay path", () => {
 
   describe("size clamping", () => {
     const logoWFor = (sizePct: number) => {
-      const args = buildCommand(opts({ logo: logo({ sizePct }) })).passes[0];
+      const args = buildCommand(opts({ logo: logo({ sizePct }) })).args;
       const graph = args[args.indexOf("-filter_complex") + 1];
       return Number(graph.match(/scale=(\d+):-1/)![1]);
     };
@@ -206,7 +200,7 @@ describe("buildCommand — logo overlay path", () => {
   });
 
   it("sanitizes the logo extension into the FS filename", () => {
-    const args = buildCommand(opts({ logo: logo({ ext: "JPG" }) })).passes[0];
+    const args = buildCommand(opts({ logo: logo({ ext: "JPG" }) })).args;
     expect(args.join(" ")).toContain("-i logo.jpg");
   });
 });
@@ -221,8 +215,8 @@ describe("output metadata", () => {
   });
 
   it("adds +faststart only for mp4", () => {
-    expect(buildCommand(opts({ container: "mp4" })).passes[0].join(" ")).toContain("+faststart");
-    expect(buildCommand(opts({ container: "ts" })).passes[0].join(" ")).not.toContain("+faststart");
+    expect(buildCommand(opts({ container: "mp4" })).args.join(" ")).toContain("+faststart");
+    expect(buildCommand(opts({ container: "ts" })).args.join(" ")).not.toContain("+faststart");
   });
 });
 

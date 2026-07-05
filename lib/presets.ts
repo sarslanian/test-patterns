@@ -15,14 +15,15 @@ export type AudioMode = "tone-20" | "tone-18" | "tone-12" | "silence";
 /** Path the burn-in font is written to inside ffmpeg's virtual FS */
 export const FONT_FS_PATH = "font.ttf";
 
-export type LogoPosition = "tl" | "tr" | "center" | "bl" | "br";
+/** Quick-set preset id — labels a slot in LOGO_POSITIONS, not used elsewhere. */
+type LogoPositionPreset = "tl" | "tr" | "center" | "bl" | "br";
 
 /**
  * Quick-set presets. `x`/`y` are the horizontal/vertical placement percentages
  * the preset snaps the fine sliders to: 0 = flush to the safe edge, 50 =
  * centered, 100 = flush to the opposite safe edge (see overlayPosition).
  */
-export const LOGO_POSITIONS: { id: LogoPosition; label: string; x: number; y: number }[] = [
+export const LOGO_POSITIONS: { id: LogoPositionPreset; label: string; x: number; y: number }[] = [
   { id: "tl", label: "Top L", x: 0, y: 0 },
   { id: "tr", label: "Top R", x: 100, y: 0 },
   { id: "center", label: "Center", x: 50, y: 50 },

@@ -35,13 +35,10 @@ export interface GenerateOptions {
 }
 
 export interface BuiltCommand {
-  /** One or two ffmpeg invocations, run in order. Two when a logo is overlaid. */
-  passes: string[][];
-  /** Name the final pass writes and the caller reads back. */
+  args: string[];
+  /** Name the command writes and the caller reads back. */
   outputName: string;
   mimeType: string;
-  /** Intermediate FS files to delete after the final pass (currently unused). */
-  intermediateNames: string[];
 }
 
 /** SMPTE ST 2046-1 HD safe areas: 93% action, 90% title, plus center cross */
@@ -109,7 +106,7 @@ export function clampDuration(seconds: number): number {
   return Math.min(MAX_DURATION_SEC, Math.max(MIN_DURATION_SEC, Math.round(seconds)));
 }
 
-function clamp(value: number, min: number, max: number, fallback: number): number {
+export function clamp(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, value));
 }
@@ -225,7 +222,7 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
       ...faststart,
       outputName,
     ];
-    return { passes: [args], outputName, mimeType: container.mimeType, intermediateNames: [] };
+    return { args, outputName, mimeType: container.mimeType };
   }
 
   // Logo: the pattern (0:v) and the logo image (input 1) are composited in a
@@ -276,5 +273,5 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
     outputName,
   ];
 
-  return { passes: [args], outputName, mimeType: container.mimeType, intermediateNames: [] };
+  return { args, outputName, mimeType: container.mimeType };
 }

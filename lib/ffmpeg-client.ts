@@ -33,6 +33,11 @@ export class FfmpegEngine {
     return typeof window !== "undefined" && window.crossOriginIsolated ? "multi" : "single";
   }
 
+  /** The core mode actually loaded right now (null before the first load resolves). */
+  get activeMode(): ThreadMode | null {
+    return this.loadedMode;
+  }
+
   /**
    * Load (or reuse) a core in the requested mode, defaulting to the best
    * available. If a different mode is already loaded it is swapped out — the
@@ -84,7 +89,7 @@ export class FfmpegEngine {
     const ffmpeg = this.ffmpeg;
     if (!ffmpeg) throw new Error("Engine not loaded");
 
-    const { passes, outputName, mimeType, intermediateNames } = buildCommand(opts);
+    const { args, outputName, mimeType } = buildCommand(opts);
     const durationUs = opts.durationSec * 1_000_000;
 
     // The uploaded logo (if any) is a per-render input, so write it fresh each
@@ -97,14 +102,11 @@ export class FfmpegEngine {
       await ffmpeg.writeFile(logoPath, opts.logo.data.slice());
     }
 
-    // Each pass encodes the full duration, so map its output time into an even
-    // slice of the overall bar (pass i of n spans [i/n, (i+1)/n]). lavfi inputs
-    // are infinite, so ratio comes from encoded output time, not ffmpeg's own.
-    let passIndex = 0;
+    // lavfi inputs are infinite, so ffmpeg can't report a meaningful ratio —
+    // derive progress from encoded output time vs requested duration instead.
     const onProgress = ({ time }: { progress: number; time: number }) => {
       if (cbs.onProgress && durationUs > 0) {
-        const within = Math.max(0, Math.min(1, time / durationUs));
-        cbs.onProgress((passIndex + within) / passes.length);
+        cbs.onProgress(Math.max(0, Math.min(1, time / durationUs)));
       }
     };
     const onLog = ({ message }: { message: string }) => cbs.onLog?.(message);
@@ -112,13 +114,11 @@ export class FfmpegEngine {
     if (cbs.onLog) ffmpeg.on("log", onLog);
 
     try {
-      for (passIndex = 0; passIndex < passes.length; passIndex++) {
-        const code = await ffmpeg.exec(passes[passIndex]);
-        if (code !== 0) {
-          throw new Error(
-            `ffmpeg exited with code ${code}\n${this.logTail.slice(-12).join("\n")}`
-          );
-        }
+      const code = await ffmpeg.exec(args);
+      if (code !== 0) {
+        throw new Error(
+          `ffmpeg exited with code ${code}\n${this.logTail.slice(-12).join("\n")}`
+        );
       }
       const data = (await ffmpeg.readFile(outputName)) as Uint8Array;
       await ffmpeg.deleteFile(outputName).catch(() => {});
@@ -136,11 +136,8 @@ export class FfmpegEngine {
       if (cbs.onLog) ffmpeg.off("log", onLog);
       // Only touch the FS if the worker is still alive — a wasm fault above
       // terminates it, and deleteFile would then throw on a null instance.
-      if (this.ffmpeg) {
-        for (const name of intermediateNames) {
-          await ffmpeg.deleteFile(name).catch(() => {});
-        }
-        if (logoPath) await ffmpeg.deleteFile(logoPath).catch(() => {});
+      if (logoPath && this.ffmpeg) {
+        await this.ffmpeg.deleteFile(logoPath).catch(() => {});
       }
     }
   }
