@@ -537,7 +537,7 @@ export default function TestPatternPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5 lg:flex-row lg:items-start lg:gap-6 lg:min-h-0 lg:overflow-hidden">
-        <Card className="flex w-full flex-col border-border/80 shadow-none lg:h-full lg:max-w-[480px] lg:min-h-0 lg:shrink-0 lg:overflow-hidden">
+        <Card className="flex w-full flex-col border-border/80 shadow-none lg:max-h-full lg:max-w-[480px] lg:min-h-0 lg:shrink-0 lg:overflow-hidden">
           <CardHeader className="pb-4 lg:shrink-0">
             <CardTitle className="text-base font-semibold tracking-tight">Signal</CardTitle>
             <p className="text-xs text-muted-foreground">
