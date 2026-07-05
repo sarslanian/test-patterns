@@ -15,6 +15,56 @@ export type AudioMode = "tone-20" | "tone-18" | "tone-12" | "silence";
 /** Path the burn-in font is written to inside ffmpeg's virtual FS */
 export const FONT_FS_PATH = "font.ttf";
 
+/** Quick-set preset id — labels a slot in LOGO_POSITIONS, not used elsewhere. */
+type LogoPositionPreset = "tl" | "tr" | "center" | "bl" | "br";
+
+/**
+ * Quick-set presets. `x`/`y` are the horizontal/vertical placement percentages
+ * the preset snaps the fine sliders to: 0 = flush to the safe edge, 50 =
+ * centered, 100 = flush to the opposite safe edge (see overlayPosition).
+ */
+export const LOGO_POSITIONS: { id: LogoPositionPreset; label: string; x: number; y: number }[] = [
+  { id: "tl", label: "Top L", x: 0, y: 0 },
+  { id: "tr", label: "Top R", x: 100, y: 0 },
+  { id: "center", label: "Center", x: 50, y: 50 },
+  { id: "bl", label: "Bot L", x: 0, y: 100 },
+  { id: "br", label: "Bot R", x: 100, y: 100 },
+];
+
+/** Default placement: bottom-right, matching the initial preset. */
+export const LOGO_POS_DEFAULT = { x: 100, y: 100 } as const;
+
+/** Accepted logo image MIME types (raster only — the wasm core has no SVG rasterizer) */
+export const LOGO_ACCEPT = "image/png,image/jpeg";
+/** Reject uploads larger than this — the wasm core is memory-tight */
+export const LOGO_MAX_BYTES = 5 * 1024 * 1024;
+
+export const LOGO_SIZE_PCT = { min: 5, max: 40, default: 15 } as const;
+export const LOGO_OPACITY_PCT = { min: 20, max: 100, default: 100 } as const;
+/** Logo inset from the frame edge, as a percentage of frame width */
+export const LOGO_MARGIN_PCT = 3;
+
+export interface LogoOptions {
+  /** Raw image bytes, written to the virtual FS per render */
+  data: Uint8Array;
+  /** File extension for the FS filename (e.g. "png", "jpg") */
+  ext: string;
+  /** Horizontal placement across the safe area: 0 = left edge, 100 = right */
+  xPct: number;
+  /** Vertical placement across the safe area: 0 = top edge, 100 = bottom */
+  yPct: number;
+  /** Logo width as a percentage of frame width */
+  sizePct: number;
+  /** Alpha multiplier, 0–1 */
+  opacity: number;
+}
+
+/** Path an uploaded logo is written to inside ffmpeg's virtual FS */
+export function logoFsPath(ext: string): string {
+  const clean = ext.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return `logo.${clean || "png"}`;
+}
+
 export interface AudioModeDef {
   id: AudioMode;
   label: string;

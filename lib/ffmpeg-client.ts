@@ -2,6 +2,7 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 
 import { buildCommand, FONT_FS_PATH, type GenerateOptions } from "./build-command";
+import { logoFsPath } from "./presets";
 
 export type ThreadMode = "multi" | "single";
 
@@ -24,25 +25,41 @@ export interface GenerateResult {
 export class FfmpegEngine {
   private ffmpeg: FFmpeg | null = null;
   private loading: Promise<ThreadMode> | null = null;
+  private loadedMode: ThreadMode | null = null;
   readonly logTail: string[] = [];
 
+  /** Best available mode: multi when the page is cross-origin isolated. */
   get threadMode(): ThreadMode {
     return typeof window !== "undefined" && window.crossOriginIsolated ? "multi" : "single";
   }
 
-  load(): Promise<ThreadMode> {
+  /** The core mode actually loaded right now (null before the first load resolves). */
+  get activeMode(): ThreadMode | null {
+    return this.loadedMode;
+  }
+
+  /**
+   * Load (or reuse) a core in the requested mode, defaulting to the best
+   * available. If a different mode is already loaded it is swapped out — the
+   * multi-threaded core deadlocks on any filtergraph that combines two inputs
+   * (two lavfi sources, or a file + overlay), so logo renders force "single".
+   */
+  load(mode: ThreadMode = this.threadMode): Promise<ThreadMode> {
+    if (this.loadedMode && this.loadedMode !== mode) {
+      this.terminate();
+    }
     if (!this.loading) {
-      this.loading = this.doLoad().catch((err) => {
+      this.loading = this.doLoad(mode).catch((err) => {
         this.loading = null;
         this.ffmpeg = null;
+        this.loadedMode = null;
         throw err;
       });
     }
     return this.loading;
   }
 
-  private async doLoad(): Promise<ThreadMode> {
-    const mode = this.threadMode;
+  private async doLoad(mode: ThreadMode): Promise<ThreadMode> {
     const base = mode === "multi" ? "/ffmpeg/core-mt" : "/ffmpeg/core-st";
     const ffmpeg = new FFmpeg();
     ffmpeg.on("log", ({ message }) => {
@@ -61,16 +78,29 @@ export class FfmpegEngine {
     });
     await ffmpeg.writeFile(FONT_FS_PATH, await fetchFile("/fonts/DejaVuSansMono-Bold.ttf"));
     this.ffmpeg = ffmpeg;
+    this.loadedMode = mode;
     return mode;
   }
 
   async generate(opts: GenerateOptions, cbs: GenerateCallbacks = {}): Promise<GenerateResult> {
-    await this.load();
+    // Overlaying a logo needs a second input, which deadlocks the MT core —
+    // fall back to the single-threaded core for those renders.
+    await this.load(opts.logo ? "single" : this.threadMode);
     const ffmpeg = this.ffmpeg;
     if (!ffmpeg) throw new Error("Engine not loaded");
 
     const { args, outputName, mimeType } = buildCommand(opts);
     const durationUs = opts.durationSec * 1_000_000;
+
+    // The uploaded logo (if any) is a per-render input, so write it fresh each
+    // time and remove it in the finally block. Stays in the browser FS only.
+    const logoPath = opts.logo ? logoFsPath(opts.logo.ext) : null;
+    if (opts.logo && logoPath) {
+      // writeFile transfers the buffer to the worker, detaching it — copy so
+      // the caller's stored Uint8Array survives for a re-render with the same
+      // logo (otherwise the second render throws "ArrayBuffer is detached").
+      await ffmpeg.writeFile(logoPath, opts.logo.data.slice());
+    }
 
     // lavfi inputs are infinite, so ffmpeg can't report a meaningful ratio —
     // derive progress from encoded output time vs requested duration instead.
@@ -104,6 +134,11 @@ export class FfmpegEngine {
     } finally {
       ffmpeg.off("progress", onProgress);
       if (cbs.onLog) ffmpeg.off("log", onLog);
+      // Only touch the FS if the worker is still alive — a wasm fault above
+      // terminates it, and deleteFile would then throw on a null instance.
+      if (logoPath && this.ffmpeg) {
+        await this.ffmpeg.deleteFile(logoPath).catch(() => {});
+      }
     }
   }
 
@@ -112,5 +147,6 @@ export class FfmpegEngine {
     this.ffmpeg?.terminate();
     this.ffmpeg = null;
     this.loading = null;
+    this.loadedMode = null;
   }
 }
