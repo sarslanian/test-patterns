@@ -500,7 +500,7 @@ export default function TestPatternPage() {
   }, [file, fileNameInput]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
       <header className="shrink-0 border-b border-border bg-card py-3">
         <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
@@ -536,15 +536,16 @@ export default function TestPatternPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5 lg:flex-row lg:items-start lg:gap-6">
-        <Card className="w-full border-border/80 shadow-none lg:max-w-[480px] lg:shrink-0">
-          <CardHeader className="pb-4">
+      <main className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5 lg:flex-row lg:items-start lg:gap-6 lg:min-h-0 lg:overflow-hidden">
+        <Card className="flex w-full flex-col border-border/80 shadow-none lg:h-full lg:max-w-[480px] lg:min-h-0 lg:shrink-0 lg:overflow-hidden">
+          <CardHeader className="pb-4 lg:shrink-0">
             <CardTitle className="text-base font-semibold tracking-tight">Signal</CardTitle>
             <p className="text-xs text-muted-foreground">
               Synthetic lavfi sources — nothing is uploaded, everything renders locally.
             </p>
           </CardHeader>
-          <CardContent className="flex flex-col gap-5 pt-0">
+          <CardContent className="flex flex-1 flex-col gap-5 pt-0 lg:min-h-0 lg:overflow-hidden">
+            <div className="flex flex-col gap-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
             <div className="space-y-2">
               <Label
                 htmlFor="pattern"
@@ -866,8 +867,9 @@ export default function TestPatternPage() {
                 </p>
               ) : null}
             </AccordionSection>
+            </div>
 
-            <div className="sticky bottom-0 -mx-6 -mb-6 space-y-3 rounded-b-xl border-t border-border/60 bg-card px-6 pb-6 pt-4">
+            <div className="space-y-3 border-t border-border/60 pt-4 lg:shrink-0">
               {rendering ? (
                 <Button
                   type="button"
