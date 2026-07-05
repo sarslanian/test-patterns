@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   Cpu,
   Download,
   Film,
@@ -104,6 +105,55 @@ function SegmentedGroup<T extends string>({
           {item.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Collapsible settings group. The panel keeps growing as features are added
+ * (logo overlay alone stacks a preview + 4 controls), so secondary groups
+ * collapse to a one-line summary and only one expands at a time — the parent
+ * owns `isOpen`/`onToggle` so it can enforce that.
+ */
+function AccordionSection({
+  title,
+  summary,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border/70">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left touch-manipulation"
+      >
+        <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </span>
+        <span className="flex min-w-0 items-center gap-2">
+          {!isOpen ? (
+            <span className="truncate text-xs text-muted-foreground/80">{summary}</span>
+          ) : null}
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+              isOpen && "rotate-180"
+            )}
+          />
+        </span>
+      </button>
+      {isOpen ? (
+        <div className="space-y-4 border-t border-border/70 px-3 py-3">{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -226,6 +276,13 @@ export default function TestPatternPage() {
   const [safeArea, setSafeArea] = useState(false);
   const [label, setLabel] = useState("");
 
+  // Secondary settings groups collapse to a one-line summary; only one is
+  // open at a time so the panel doesn't grow unbounded as features stack up.
+  type SignalSection = "burnin" | "logo" | "audio";
+  const [openSection, setOpenSection] = useState<SignalSection | null>(null);
+  const toggleSection = (id: SignalSection) =>
+    setOpenSection((cur) => (cur === id ? null : id));
+
   const [logo, setLogo] = useState<{
     data: Uint8Array;
     ext: string;
@@ -312,6 +369,7 @@ export default function TestPatternPage() {
         img.src = url;
       });
       setLogo({ data, ext, name: selected.name, url, aspect });
+      setOpenSection("logo");
     },
     []
   );
@@ -327,6 +385,21 @@ export default function TestPatternPage() {
 
   // The active quick-set preset, if the sliders currently sit on one of them.
   const activePreset = LOGO_POSITIONS.find((p) => p.x === logoX && p.y === logoY);
+
+  // One-line summaries shown on each collapsed accordion section's header.
+  const burnInSummary = (() => {
+    const parts: string[] = [];
+    if (burnTimecode) parts.push("timecode");
+    if (safeArea) parts.push("safe areas");
+    if (label.trim()) parts.push(`"${label.trim()}"`);
+    return parts.length ? parts.join(", ") : "Off";
+  })();
+
+  const logoSummary = logo
+    ? `${activePreset ? activePreset.label : `${logoX}%, ${logoY}%`} · ${logoSize}% · ${logoOpacity}%`
+    : "None";
+
+  const audioContainerSummary = `${audioModeById(audio).label} · ${containerById(container).label}`;
 
   const summary = useMemo(() => {
     const mode = audioModeById(audio);
@@ -555,10 +628,12 @@ export default function TestPatternPage() {
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Burn-in
-              </Label>
+            <AccordionSection
+              title="Burn-in"
+              summary={burnInSummary}
+              isOpen={openSection === "burnin"}
+              onToggle={() => toggleSection("burnin")}
+            >
               <label className="flex items-center gap-2.5 text-sm">
                 <input
                   type="checkbox"
@@ -588,12 +663,14 @@ export default function TestPatternPage() {
                 placeholder="Optional label, e.g. GAME 4 SRT TEST — CH 2"
                 spellCheck={false}
               />
-            </div>
+            </AccordionSection>
 
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Logo overlay
-              </Label>
+            <AccordionSection
+              title="Logo overlay"
+              summary={logoSummary}
+              isOpen={openSection === "logo"}
+              onToggle={() => toggleSection("logo")}
+            >
               <input
                 ref={logoInputRef}
                 type="file"
@@ -747,43 +824,50 @@ export default function TestPatternPage() {
                   browser — never uploaded.
                 </p>
               )}
-            </div>
+            </AccordionSection>
 
-            <div className="flex flex-wrap gap-x-6 gap-y-4">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Audio (1 kHz)
-                </Label>
-                <SegmentedGroup
-                  ariaLabel="Audio"
-                  items={AUDIO_MODES}
-                  value={audio}
-                  onChange={setAudio}
-                  disabled={rendering}
-                />
+            <AccordionSection
+              title="Audio & container"
+              summary={audioContainerSummary}
+              isOpen={openSection === "audio"}
+              onToggle={() => toggleSection("audio")}
+            >
+              <div className="flex flex-wrap gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Audio (1 kHz)
+                  </Label>
+                  <SegmentedGroup
+                    ariaLabel="Audio"
+                    items={AUDIO_MODES}
+                    value={audio}
+                    onChange={setAudio}
+                    disabled={rendering}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Container
+                  </Label>
+                  <SegmentedGroup
+                    ariaLabel="Container"
+                    items={CONTAINERS}
+                    value={container}
+                    onChange={setContainer}
+                    disabled={rendering}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Container
-                </Label>
-                <SegmentedGroup
-                  ariaLabel="Container"
-                  items={CONTAINERS}
-                  value={container}
-                  onChange={setContainer}
-                  disabled={rendering}
-                />
-              </div>
-            </div>
 
-            {isLipsync ? (
-              <p className="rounded-md border border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                Lip sync drives its own audio: a 100 ms beep on every flash, at the selected
-                tone level. Silence is ignored (defaults to −20 dBFS).
-              </p>
-            ) : null}
+              {isLipsync ? (
+                <p className="rounded-md border border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                  Lip sync drives its own audio: a 100 ms beep on every flash, at the selected
+                  tone level. Silence is ignored (defaults to −20 dBFS).
+                </p>
+              ) : null}
+            </AccordionSection>
 
-            <div className="space-y-3 border-t border-border/60 pt-4">
+            <div className="sticky bottom-0 -mx-6 -mb-6 space-y-3 rounded-b-xl border-t border-border/60 bg-card px-6 pb-6 pt-4">
               {rendering ? (
                 <Button
                   type="button"
