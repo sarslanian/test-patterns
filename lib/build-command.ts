@@ -2,11 +2,16 @@ import {
   type AudioMode,
   type ContainerId,
   type FormatId,
+  type LogoOptions,
   type PatternId,
   audioModeById,
   containerById,
   formatById,
   FONT_FS_PATH,
+  LOGO_MARGIN_PCT,
+  LOGO_OPACITY_PCT,
+  LOGO_SIZE_PCT,
+  logoFsPath,
   MAX_DURATION_SEC,
   MIN_DURATION_SEC,
   patternById,
@@ -25,10 +30,13 @@ export interface GenerateOptions {
   label: string;
   /** Burn action-safe (93%) / title-safe (90%) boxes + center cross */
   safeArea: boolean;
+  /** Uploaded logo to composite over the pattern; omit for none */
+  logo?: LogoOptions;
 }
 
 export interface BuiltCommand {
   args: string[];
+  /** Name the command writes and the caller reads back. */
   outputName: string;
   mimeType: string;
 }
@@ -98,6 +106,55 @@ export function clampDuration(seconds: number): number {
   return Math.min(MAX_DURATION_SEC, Math.max(MIN_DURATION_SEC, Math.round(seconds)));
 }
 
+export function clamp(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * overlay x:y expression for a placement percentage on each axis. Travel is
+ * inset by `margin` px on both sides, so 0 sits `margin` from the top/left
+ * edge, 100 sits `margin` from the bottom/right, and 50 is centered (the
+ * margins cancel). Percentages are kept as integer arithmetic in the filter.
+ */
+function overlayPosition(xPct: number, yPct: number, margin: number): string {
+  const x = `${margin}+(main_w-overlay_w-${2 * margin})*${xPct}/100`;
+  const y = `${margin}+(main_h-overlay_h-${2 * margin})*${yPct}/100`;
+  return `x=${x}:y=${y}`;
+}
+
+export interface LogoLayout {
+  /** All values are fractions (0–1) of the frame's width/height. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Logo box as fractions of the frame, mirroring {@link overlayPosition} exactly
+ * so a UI preview matches the rendered output. `logoAspect` is the image's
+ * height/width; `frameAspect` its width/height. The 3% margin is a fraction of
+ * frame *width*, so it converts to a taller fraction on the vertical axis.
+ */
+export function logoLayoutFractions(
+  xPct: number,
+  yPct: number,
+  sizePct: number,
+  logoAspect: number,
+  frameAspect: number
+): LogoLayout {
+  const marginX = LOGO_MARGIN_PCT / 100;
+  const marginY = marginX * frameAspect;
+  const width = clamp(sizePct, LOGO_SIZE_PCT.min, LOGO_SIZE_PCT.max, LOGO_SIZE_PCT.default) / 100;
+  const height = width * logoAspect * frameAspect;
+  const travelX = Math.max(0, 1 - width - 2 * marginX);
+  const travelY = Math.max(0, 1 - height - 2 * marginY);
+  const left = marginX + (travelX * clamp(xPct, 0, 100, 100)) / 100;
+  const top = marginY + (travelY * clamp(yPct, 0, 100, 100)) / 100;
+  return { left, top, width, height };
+}
+
 export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const pattern = patternById(opts.pattern);
   const format = formatById(opts.format);
@@ -116,33 +173,32 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
     : amplitude != null
       ? `aevalsrc=${amplitude}*sin(2*PI*1000*t)|${amplitude}*sin(2*PI*1000*t):s=48000`
       : "anullsrc=r=48000:cl=stereo";
+  // Pattern normalization + interlacing, before any logo is composited.
+  const preOverlay: string[] = [...pattern.buildPrefilters(format)];
+  if (format.interlaced) {
+    preOverlay.push("interlace=scan=tff");
+  }
+  // Burn-ins sit ON TOP of the logo so timecode/label/safe-area stay legible.
+  const burnIns: string[] = [];
+  if (opts.burnTimecode) {
+    burnIns.push(timecodeFilter(format.tcRate, format.height));
+  }
+  const label = opts.label.trim();
+  if (label.length > 0) {
+    burnIns.push(labelFilter(label, format.height));
+  }
+  if (opts.safeArea) {
+    burnIns.push(...SAFE_AREA_FILTERS);
+  }
+
   // Both sources ride one lavfi input as separate output pads. Two -f lavfi
   // inputs deadlock ffmpeg.wasm's multi-threaded core (exec never returns);
   // a single input with [out0]/[out1] pads yields the same two streams.
   const lavfiInput = `${videoSource}[out0];${audioSource}[out1]`;
 
-  const filters: string[] = [...pattern.buildPrefilters(format)];
-  if (format.interlaced) {
-    filters.push("interlace=scan=tff");
-  }
-  if (opts.burnTimecode) {
-    filters.push(timecodeFilter(format.tcRate, format.height));
-  }
-  const label = opts.label.trim();
-  if (label.length > 0) {
-    filters.push(labelFilter(label, format.height));
-  }
-  if (opts.safeArea) {
-    filters.push(...SAFE_AREA_FILTERS);
-  }
-  filters.push("format=yuv420p");
-
   const outputName = `${pattern.id}_${format.label.replace(/\./g, "")}_${duration}s.${container.extension}`;
 
-  const args = [
-    "-f", "lavfi", "-i", lavfiInput,
-    "-vf", filters.join(","),
-    "-t", String(duration),
+  const encodeVideo = [
     "-c:v", "libx264",
     "-preset", "superfast",
     "-crf", "18",
@@ -151,9 +207,69 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
     "-color_primaries", "bt709",
     "-color_trc", "bt709",
     "-colorspace", "bt709",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    ...(container.id === "mp4" ? ["-movflags", "+faststart"] : []),
+  ];
+  const encodeAudio = ["-c:a", "aac", "-b:a", "192k"];
+  const faststart = container.id === "mp4" ? ["-movflags", "+faststart"] : [];
+
+  // No logo: single lavfi input + a linear -vf chain (the fast path).
+  if (!opts.logo) {
+    const args = [
+      "-f", "lavfi", "-i", lavfiInput,
+      "-vf", [...preOverlay, ...burnIns, "format=yuv420p"].join(","),
+      "-t", String(duration),
+      ...encodeVideo,
+      ...encodeAudio,
+      ...faststart,
+      outputName,
+    ];
+    return { args, outputName, mimeType: container.mimeType };
+  }
+
+  // Logo: the pattern (0:v) and the logo image (input 1) are composited in a
+  // filter_complex — pattern → prefilters → overlay(logo) → burn-ins. This
+  // combines two inputs into one graph, which deadlocks the MT core, so the
+  // caller runs logo renders on the single-threaded core (see ffmpeg-client).
+  const logo = opts.logo;
+  const sizePct = clamp(logo.sizePct, LOGO_SIZE_PCT.min, LOGO_SIZE_PCT.max, LOGO_SIZE_PCT.default);
+  const opacity = clamp(logo.opacity, LOGO_OPACITY_PCT.min / 100, 1, 1);
+  const xPct = Math.round(clamp(logo.xPct, 0, 100, 100));
+  const yPct = Math.round(clamp(logo.yPct, 0, 100, 100));
+  const logoW = Math.round((format.width * sizePct) / 100);
+  const margin = Math.round((format.width * LOGO_MARGIN_PCT) / 100);
+
+  // Scale the logo, and — only when translucent — pull its alpha down so the
+  // whole mark fades. overlay blends in yuv420 (still honoring the logo's
+  // alpha); format=auto would force a slow full-frame rgba conversion.
+  const logoChain = [`scale=${logoW}:-1`];
+  if (opacity < 1) {
+    logoChain.push("format=rgba", `colorchannelmixer=aa=${opacity}`);
+  }
+  // `-loop 1` on the image input makes the still logo a continuous stream;
+  // overlay shortest=1 ends the graph when the finite pattern stream would
+  // (bounded by -t). Prefilters run ahead of the overlay so the bars' 601→709
+  // matrix doesn't recolor the logo. Empty prefilters → overlay reads [0:v].
+  const segments: string[] = [];
+  let baseLabel = "[0:v]";
+  if (preOverlay.length > 0) {
+    segments.push(`[0:v]${preOverlay.join(",")}[base]`);
+    baseLabel = "[base]";
+  }
+  segments.push(`[1:v]${logoChain.join(",")}[lg]`);
+  segments.push(
+    `${baseLabel}[lg]overlay=${overlayPosition(xPct, yPct, margin)}:format=yuv420:shortest=1[ov]`
+  );
+  segments.push(`[ov]${[...burnIns, "format=yuv420p"].join(",")}[v]`);
+
+  const args = [
+    "-f", "lavfi", "-i", lavfiInput,
+    "-loop", "1", "-i", logoFsPath(logo.ext),
+    "-filter_complex", segments.join(";"),
+    "-map", "[v]",
+    "-map", "0:a",
+    "-t", String(duration),
+    ...encodeVideo,
+    ...encodeAudio,
+    ...faststart,
     outputName,
   ];
 

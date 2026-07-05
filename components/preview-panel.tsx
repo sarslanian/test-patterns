@@ -3,8 +3,9 @@
 import { Download } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { TsPreview } from "@/components/ts-preview";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeFileName } from "@/lib/utils";
 import type { RenderedFile } from "@/lib/use-test-pattern-engine";
 
 function formatBytes(bytes: number): string {
@@ -12,16 +13,39 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PreviewPanel({ file }: { file: RenderedFile | null }) {
+export function PreviewPanel({
+  file,
+  fileNameInput,
+  setFileNameInput,
+  fileNameParts,
+  downloadName,
+}: {
+  file: RenderedFile | null;
+  fileNameInput: string;
+  setFileNameInput: (value: string) => void;
+  fileNameParts: { base: string; ext: string };
+  downloadName: string;
+}) {
   return (
     <Card className="flex w-full min-w-0 flex-1 flex-col border-border/80 shadow-none">
       <CardHeader className="!flex-row flex-wrap items-center justify-between gap-x-4 gap-y-3 space-y-0 border-b border-border/60 pb-4">
-        <div className="space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <CardTitle className="text-base font-semibold tracking-tight">Preview</CardTitle>
           {file ? (
-            <p className="font-mono text-xs text-muted-foreground">
-              {file.name} · {formatBytes(file.sizeBytes)}
-            </p>
+            <div className="flex min-w-0 items-center gap-1">
+              <Input
+                value={fileNameInput}
+                onChange={(e) => setFileNameInput(sanitizeFileName(e.target.value))}
+                aria-label="File name"
+                maxLength={120}
+                spellCheck={false}
+                placeholder={fileNameParts.base}
+                className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 font-mono text-xs text-muted-foreground shadow-none focus-visible:ring-1"
+              />
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                .{fileNameParts.ext} · {formatBytes(file.sizeBytes)}
+              </span>
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">Generated file loops here</p>
           )}
@@ -29,7 +53,7 @@ export function PreviewPanel({ file }: { file: RenderedFile | null }) {
         {file ? (
           <a
             href={file.url}
-            download={file.name}
+            download={downloadName}
             className={cn(buttonVariants(), "touch-manipulation gap-2")}
           >
             <Download className="h-4 w-4" />
