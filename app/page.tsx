@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { TsPreview } from "@/components/ts-preview";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeFileName, splitExtension } from "@/lib/utils";
 import {
   type AudioMode,
   type ContainerId,
@@ -251,6 +251,9 @@ export default function TestPatternPage() {
   const [lastLog, setLastLog] = useState("");
   const [renderError, setRenderError] = useState<string | null>(null);
   const [file, setFile] = useState<RenderedFile | null>(null);
+  // Editable base filename (no extension) for download; reset to the
+  // selection-derived default on every successful render.
+  const [fileNameInput, setFileNameInput] = useState("");
   const fileUrlRef = useRef<string | null>(null);
 
   const loadEngine = useCallback(async () => {
@@ -389,6 +392,7 @@ export default function TestPatternPage() {
       const blob = new Blob([result.data as BlobPart], { type: result.mimeType });
       const url = URL.createObjectURL(blob);
       fileUrlRef.current = url;
+      setFileNameInput(splitExtension(result.outputName).base);
       setFile({
         url,
         name: result.outputName,
@@ -412,6 +416,15 @@ export default function TestPatternPage() {
   }, [loadEngine]);
 
   const busy = rendering || engineState === "loading";
+
+  // Sanitized custom name + the container's extension; falls back to the
+  // selection-derived default if the field is empty or only invalid chars.
+  const downloadName = useMemo(() => {
+    if (!file) return "";
+    const { base: defaultBase, ext } = splitExtension(file.name);
+    const base = sanitizeFileName(fileNameInput).trim() || defaultBase;
+    return ext ? `${base}.${ext}` : base;
+  }, [file, fileNameInput]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -853,12 +866,23 @@ export default function TestPatternPage() {
 
         <Card className="flex w-full min-w-0 flex-1 flex-col border-border/80 shadow-none">
           <CardHeader className="!flex-row flex-wrap items-center justify-between gap-x-4 gap-y-3 space-y-0 border-b border-border/60 pb-4">
-            <div className="space-y-1">
+            <div className="min-w-0 flex-1 space-y-1">
               <CardTitle className="text-base font-semibold tracking-tight">Preview</CardTitle>
               {file ? (
-                <p className="font-mono text-xs text-muted-foreground">
-                  {file.name} · {formatBytes(file.sizeBytes)}
-                </p>
+                <div className="flex min-w-0 items-center gap-1">
+                  <Input
+                    value={fileNameInput}
+                    onChange={(e) => setFileNameInput(sanitizeFileName(e.target.value))}
+                    aria-label="File name"
+                    maxLength={120}
+                    spellCheck={false}
+                    placeholder={splitExtension(file.name).base}
+                    className="h-6 min-w-0 flex-1 border-none bg-transparent px-1 font-mono text-xs text-muted-foreground shadow-none focus-visible:ring-1"
+                  />
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    .{splitExtension(file.name).ext} · {formatBytes(file.sizeBytes)}
+                  </span>
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">Generated file loops here</p>
               )}
@@ -866,7 +890,7 @@ export default function TestPatternPage() {
             {file ? (
               <a
                 href={file.url}
-                download={file.name}
+                download={downloadName}
                 className={cn(buttonVariants(), "touch-manipulation gap-2")}
               >
                 <Download className="h-4 w-4" />
