@@ -95,7 +95,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
         </p>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-5 pt-0 lg:min-h-0 lg:overflow-hidden">
-        <div className="flex flex-col gap-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+        {/* -mx-1/px-1 keep 4px inside the scroll clip so focus rings survive */}
+        <div className="flex flex-col gap-5 lg:-mx-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-1">
           <div className="space-y-2">
             <Label
               htmlFor="pattern"
