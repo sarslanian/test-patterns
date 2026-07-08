@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import {
   AUDIO_MODES,
   CONTAINERS,
-  FORMATS,
   LOGO_ACCEPT,
   LOGO_OPACITY_PCT,
   LOGO_SIZE_PCT,
@@ -21,8 +20,10 @@ import {
   MAX_DURATION_SEC,
   MIN_DURATION_SEC,
   PATTERNS,
+  RESOLUTIONS,
   formatById,
   patternById,
+  ratesForResolution,
 } from "@/lib/presets";
 import type { TestPatternEngine } from "@/lib/use-test-pattern-engine";
 
@@ -32,8 +33,11 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
   const {
     pattern,
     setPattern,
+    resolution,
+    setResolution,
+    rate,
+    setRate,
     format,
-    setFormat,
     durationText,
     setDurationText,
     container,
@@ -71,6 +75,7 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
     renderError,
     durationSec,
     durationValid,
+    maxDurationSec,
     isLipsync,
     summary,
     burnInSummary,
@@ -82,6 +87,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
     handleCancel,
   } = engine;
 
+  const fmt = formatById(format);
+
   return (
     <Card className="flex w-full flex-col border-border/80 shadow-none lg:max-h-full lg:max-w-[480px] lg:min-h-0 lg:shrink-0 lg:overflow-hidden">
       <CardHeader className="pb-4 lg:shrink-0">
@@ -91,7 +98,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
         </p>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-5 pt-0 lg:min-h-0 lg:overflow-hidden">
-        <div className="flex flex-col gap-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+        {/* -mx-1/px-1 keep 4px inside the scroll clip so focus rings survive */}
+        <div className="flex flex-col gap-5 lg:-mx-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-1">
           <div className="space-y-2">
             <Label
               htmlFor="pattern"
@@ -118,17 +126,58 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
               Format
             </Label>
-            <SegmentedGroup
-              ariaLabel="Format"
-              items={FORMATS}
-              value={format}
-              onChange={setFormat}
-              disabled={rendering}
-            />
-            {formatById(format).interlaced ? (
+            <div role="group" aria-label="Format" className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label
+                  htmlFor="resolution"
+                  className="text-[11px] font-normal text-muted-foreground/70"
+                >
+                  Resolution
+                </Label>
+                <Select
+                  id="resolution"
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value as typeof resolution)}
+                  disabled={rendering}
+                >
+                  {RESOLUTIONS.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label
+                  htmlFor="rate"
+                  className="text-[11px] font-normal text-muted-foreground/70"
+                >
+                  Frame rate
+                </Label>
+                <Select
+                  id="rate"
+                  value={rate}
+                  onChange={(e) => setRate(e.target.value as typeof rate)}
+                  disabled={rendering}
+                >
+                  {ratesForResolution(resolution).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            {fmt.interlaced ? (
               <p className="text-xs text-muted-foreground">
-                Interlaced TFF — encoded with interlaced coding flags; timecode counts at 29.97
-                drop-frame.
+                Interlaced TFF — encoded with interlaced coding flags; timecode counts at{" "}
+                {fmt.dropFrame ? "29.97 drop-frame" : `${fmt.tcRate} fps non-drop`}.
+              </p>
+            ) : null}
+            {maxDurationSec < MAX_DURATION_SEC ? (
+              <p className="text-xs text-muted-foreground">
+                Large frames are slow to encode in the browser, and duration is capped at{" "}
+                {maxDurationSec}s at this size to fit the wasm memory budget.
               </p>
             ) : null}
           </div>
@@ -145,7 +194,7 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 id="duration"
                 type="number"
                 min={MIN_DURATION_SEC}
-                max={MAX_DURATION_SEC}
+                max={maxDurationSec}
                 value={durationText}
                 onChange={(e) => setDurationText(e.target.value)}
                 disabled={rendering}
@@ -155,7 +204,7 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 <button
                   key={s}
                   type="button"
-                  disabled={rendering}
+                  disabled={rendering || s > maxDurationSec}
                   onClick={() => setDurationText(String(s))}
                   className={cn(
                     "flex h-9 touch-manipulation items-center justify-center rounded-md border border-border/80 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50",
@@ -168,7 +217,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
             </div>
             {!durationValid ? (
               <p className="text-xs text-amber-200">
-                Clamped to {durationSec}s (allowed {MIN_DURATION_SEC}–{MAX_DURATION_SEC}s).
+                Clamped to {durationSec}s (allowed {MIN_DURATION_SEC}–{maxDurationSec}s
+                {maxDurationSec < MAX_DURATION_SEC ? " at this frame size" : ""}).
               </p>
             ) : null}
           </div>
@@ -187,7 +237,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 disabled={rendering}
                 className="h-4 w-4 accent-[hsl(var(--primary))]"
               />
-              Running timecode (drop-frame, from 00:00:00;00)
+              Running timecode (
+              {fmt.dropFrame ? "drop-frame, from 00:00:00;00" : "non-drop, from 00:00:00:00"})
             </label>
             <label className="flex items-center gap-2.5 text-sm">
               <input
@@ -247,7 +298,7 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 <LogoPlacementPreview
                   url={logo.url}
                   logoAspect={logo.aspect}
-                  frameAspect={formatById(format).width / formatById(format).height}
+                  frameAspect={fmt.width / fmt.height}
                   xPct={logoX}
                   yPct={logoY}
                   sizePct={logoSize}

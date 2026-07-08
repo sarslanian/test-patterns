@@ -8,7 +8,20 @@ export type PatternId =
   | "pluge"
   | "fieldsweep"
   | "flicker";
-export type FormatId = "1080p5994" | "1080i5994" | "720p5994";
+export type ResolutionId = "2160" | "1440" | "1080" | "720" | "540" | "360";
+export type RateId =
+  | "p2398"
+  | "p24"
+  | "p25"
+  | "p2997"
+  | "p30"
+  | "p50"
+  | "p5994"
+  | "p60"
+  | "i50"
+  | "i5994";
+/** Composed as `${ResolutionId}${RateId}`, e.g. "1080p5994", "1080i50". */
+export type FormatId = `${ResolutionId}${RateId}`;
 export type ContainerId = "mp4" | "mov" | "ts";
 export type AudioMode = "tone-20" | "tone-18" | "tone-12" | "silence";
 
@@ -83,6 +96,28 @@ export function audioModeById(id: AudioMode): AudioModeDef {
   return AUDIO_MODES.find((a) => a.id === id) ?? AUDIO_MODES[0];
 }
 
+export interface ResolutionDef {
+  id: ResolutionId;
+  label: string;
+  width: number;
+  height: number;
+}
+
+export interface RateDef {
+  id: RateId;
+  /** Rate as shown in the UI dropdown, e.g. "59.94p", "50i" */
+  label: string;
+  /** Numeric part of the label, used to compose format labels ("59.94") */
+  fpsLabel: string;
+  /** lavfi source rate (progressive frame rate before any interlacing) */
+  rate: string;
+  interlaced: boolean;
+  /** drawtext timecode_rate — frame rate the burned timecode counts at */
+  tcRate: string;
+  /** SMPTE drop-frame counting (29.97/59.94 family only) */
+  dropFrame: boolean;
+}
+
 export interface FormatDef {
   id: FormatId;
   label: string;
@@ -93,6 +128,8 @@ export interface FormatDef {
   interlaced: boolean;
   /** drawtext timecode_rate — frame rate the burned timecode counts at */
   tcRate: string;
+  /** SMPTE drop-frame timecode counting (29.97/59.94 family only) */
+  dropFrame: boolean;
 }
 
 export interface PatternDef {
@@ -168,10 +205,13 @@ export const PATTERNS: PatternDef[] = [
     // only carries constant geometry + timeline enable.
     buildSource: (f) => {
       const barH = Math.round(f.height * 0.06);
+      // Bar width scales with the frame (6 px at 1920) so it stays visible at
+      // UHD and after downscaled playback.
+      const barW = Math.max(4, Math.round(f.width / 320));
       return (
         `color=c=0x141414:size=${f.width}x${f.height}:rate=${f.rate}[lsbg];` +
-        `color=c=white:size=6x${barH}:rate=${f.rate}[lsbar];` +
-        `[lsbg][lsbar]overlay=x='(main_w-6)*mod(t,1)':y='main_h*0.87':eval=frame`
+        `color=c=white:size=${barW}x${barH}:rate=${f.rate}[lsbar];` +
+        `[lsbg][lsbar]overlay=x='(main_w-${barW})*mod(t,1)':y='main_h*0.87':eval=frame`
       );
     },
     buildPrefilters: () => [
@@ -209,11 +249,19 @@ export const PATTERNS: PatternDef[] = [
     id: "fieldsweep",
     label: "Field sweep",
     description:
-      "Fast-moving vertical bar (8 px/frame) — wrong field order shows as back-and-forth judder",
-    buildSource: (f) =>
-      `color=c=black:size=${f.width}x${f.height}:rate=${f.rate}[fsbg];` +
-      `color=c=white:size=12x${f.height}:rate=${f.rate}[fsbar];` +
-      `[fsbg][fsbar]overlay=x='mod(n*8,main_w)':eval=frame`,
+      "Fast-moving vertical bar — wrong field order shows as back-and-forth judder",
+    // Bar step/width scale with the frame (8 px/frame, 12 px bar at 1920) so
+    // the sweep speed and visibility are the same fraction of the frame at
+    // every resolution.
+    buildSource: (f) => {
+      const step = Math.max(2, Math.round(f.width / 240));
+      const barW = Math.max(6, Math.round(f.width / 160));
+      return (
+        `color=c=black:size=${f.width}x${f.height}:rate=${f.rate}[fsbg];` +
+        `color=c=white:size=${barW}x${f.height}:rate=${f.rate}[fsbar];` +
+        `[fsbg][fsbar]overlay=x='mod(n*${step},main_w)':eval=frame`
+      );
+    },
     buildPrefilters: () => ["format=yuv420p"],
   },
   // NOTE: colorchart and zoneplate are intentionally absent — colorchart in
@@ -233,35 +281,61 @@ export const PATTERNS: PatternDef[] = [
   },
 ];
 
-export const FORMATS: FormatDef[] = [
-  {
-    id: "1080p5994",
-    label: "1080p59.94",
-    width: 1920,
-    height: 1080,
-    rate: "60000/1001",
-    interlaced: false,
-    tcRate: "60000/1001",
-  },
-  {
-    id: "1080i5994",
-    label: "1080i59.94",
-    width: 1920,
-    height: 1080,
-    rate: "60000/1001",
-    interlaced: true,
-    tcRate: "30000/1001",
-  },
-  {
-    id: "720p5994",
-    label: "720p59.94",
-    width: 1280,
-    height: 720,
-    rate: "60000/1001",
-    interlaced: false,
-    tcRate: "60000/1001",
-  },
+export const RESOLUTIONS: ResolutionDef[] = [
+  { id: "2160", label: "3840×2160 (UHD 4K)", width: 3840, height: 2160 },
+  { id: "1440", label: "2560×1440 (QHD)", width: 2560, height: 1440 },
+  { id: "1080", label: "1920×1080 (Full HD)", width: 1920, height: 1080 },
+  { id: "720", label: "1280×720 (HD)", width: 1280, height: 720 },
+  { id: "540", label: "960×540", width: 960, height: 540 },
+  { id: "360", label: "640×360", width: 640, height: 360 },
 ];
+
+// Fractional NTSC-family rates (29.97/59.94) count SMPTE drop-frame timecode;
+// everything else — including 23.976, which has no drop-frame standard — counts
+// non-drop. Interlaced rates source at the field rate; the interlace filter
+// halves that to the frame rate, which is what the timecode counts at.
+const RATE_ROWS: Omit<RateDef, "label">[] = [
+  { id: "p2398", fpsLabel: "23.98", rate: "24000/1001", interlaced: false, tcRate: "24000/1001", dropFrame: false },
+  { id: "p24", fpsLabel: "24", rate: "24", interlaced: false, tcRate: "24", dropFrame: false },
+  { id: "p25", fpsLabel: "25", rate: "25", interlaced: false, tcRate: "25", dropFrame: false },
+  { id: "p2997", fpsLabel: "29.97", rate: "30000/1001", interlaced: false, tcRate: "30000/1001", dropFrame: true },
+  { id: "p30", fpsLabel: "30", rate: "30", interlaced: false, tcRate: "30", dropFrame: false },
+  { id: "p50", fpsLabel: "50", rate: "50", interlaced: false, tcRate: "50", dropFrame: false },
+  { id: "p5994", fpsLabel: "59.94", rate: "60000/1001", interlaced: false, tcRate: "60000/1001", dropFrame: true },
+  { id: "p60", fpsLabel: "60", rate: "60", interlaced: false, tcRate: "60", dropFrame: false },
+  { id: "i50", fpsLabel: "50", rate: "50", interlaced: true, tcRate: "25", dropFrame: false },
+  { id: "i5994", fpsLabel: "59.94", rate: "60000/1001", interlaced: true, tcRate: "30000/1001", dropFrame: true },
+];
+
+export const RATES: RateDef[] = RATE_ROWS.map((r) => ({
+  ...r,
+  label: `${r.fpsLabel}${r.interlaced ? "i" : "p"}`,
+}));
+
+/** Interlaced scanning is only a broadcast standard at 1080 (1080i50/1080i59.94). */
+export function ratesForResolution(res: ResolutionId): RateDef[] {
+  return res === "1080" ? RATES : RATES.filter((r) => !r.interlaced);
+}
+
+/** Compose the canonical format id, e.g. ("1080", "i5994") → "1080i5994". */
+export function composeFormatId(res: ResolutionId, rate: RateId): FormatId {
+  return `${res}${rate}`;
+}
+
+/** Every valid resolution × rate combination (interlaced limited to 1080). */
+export const FORMATS: FormatDef[] = RESOLUTIONS.flatMap((res) =>
+  ratesForResolution(res.id).map((r) => ({
+    id: composeFormatId(res.id, r.id),
+    // Broadcast-style label, e.g. "1080p59.94", "1080i50", "2160p25"
+    label: `${res.id}${r.interlaced ? "i" : "p"}${r.fpsLabel}`,
+    width: res.width,
+    height: res.height,
+    rate: r.rate,
+    interlaced: r.interlaced,
+    tcRate: r.tcRate,
+    dropFrame: r.dropFrame,
+  }))
+);
 
 export interface ContainerDef {
   id: ContainerId;
@@ -288,12 +362,54 @@ export const MIN_DURATION_SEC = 1;
 export const MAX_DURATION_SEC = 300;
 export const DEFAULT_DURATION_SEC = 30;
 
+export const DEFAULT_RESOLUTION: ResolutionId = "1080";
+export const DEFAULT_RATE: RateId = "p5994";
+const DEFAULT_FORMAT: FormatId = composeFormatId(DEFAULT_RESOLUTION, DEFAULT_RATE);
+
+/** Resolve a default def at module load so a bad default fails loudly here. */
+function defaultDef<T extends { id: string }>(defs: T[], id: string, kind: string): T {
+  const def = defs.find((d) => d.id === id);
+  if (!def) throw new Error(`Default ${kind} "${id}" is not in the generated set`);
+  return def;
+}
+const DEFAULT_RATE_DEF = defaultDef(RATES, DEFAULT_RATE, "rate");
+const DEFAULT_FORMAT_DEF = defaultDef(FORMATS, DEFAULT_FORMAT, "format");
+
+/**
+ * Pixel-seconds render budget, calibrated so 1080p keeps the full duration
+ * range. Larger frames get proportionally less: the multi-threaded wasm core
+ * has a fixed 1 GiB heap, and both the encoder's in-flight frame buffers and
+ * the MEMFS-held output grow with frame area (2160 caps at 75 s, 1440 at 168 s).
+ */
+const PIXEL_SECONDS_BUDGET = 1920 * 1080 * MAX_DURATION_SEC;
+
+export function maxDurationSecFor(format: FormatDef): number {
+  const cap = Math.floor(PIXEL_SECONDS_BUDGET / (format.width * format.height));
+  return Math.max(MIN_DURATION_SEC, Math.min(MAX_DURATION_SEC, cap));
+}
+
+/**
+ * Valid rate for a resolution: the rate itself when offered there, otherwise
+ * the rate at the same speed with the other scan (i50 → p50), otherwise the
+ * default. Keeps resolution × rate combinations inside the generated matrix.
+ */
+export function coerceRate(res: ResolutionId, rate: RateId): RateId {
+  const rates = ratesForResolution(res);
+  if (rates.some((r) => r.id === rate)) return rate;
+  const fps = rateById(rate).fpsLabel;
+  return rates.find((r) => r.fpsLabel === fps)?.id ?? DEFAULT_RATE;
+}
+
 export function patternById(id: PatternId): PatternDef {
   return PATTERNS.find((p) => p.id === id) ?? PATTERNS[0];
 }
 
 export function formatById(id: FormatId): FormatDef {
-  return FORMATS.find((f) => f.id === id) ?? FORMATS[0];
+  return FORMATS.find((f) => f.id === id) ?? DEFAULT_FORMAT_DEF;
+}
+
+export function rateById(id: RateId): RateDef {
+  return RATES.find((r) => r.id === id) ?? DEFAULT_RATE_DEF;
 }
 
 export function containerById(id: ContainerId): ContainerDef {

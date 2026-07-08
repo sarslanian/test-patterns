@@ -79,6 +79,45 @@ describe("buildCommand — no-logo fast path", () => {
     expect(args.join(" ")).toContain("-flags +ildct+ilme");
   });
 
+  it("sizes and rates the source from the resolution × rate combination", () => {
+    const vfFor = (format: GenerateOptions["format"]) => {
+      const args = buildCommand(opts({ format })).args;
+      return args[args.indexOf("-i") + 1];
+    };
+    expect(vfFor("2160p25")).toContain("size=3840x2160:rate=25");
+    expect(vfFor("1080p50")).toContain("size=1920x1080:rate=50");
+    expect(vfFor("720p5994")).toContain("size=1280x720:rate=60000/1001");
+    expect(vfFor("360p30")).toContain("size=640x360:rate=30");
+  });
+
+  it("sources 1080i50 at the 50 Hz field rate and interlaces", () => {
+    const args = buildCommand(opts({ format: "1080i50" })).args;
+    expect(args[args.indexOf("-i") + 1]).toContain("size=1920x1080:rate=50");
+    expect(args[args.indexOf("-vf") + 1]).toContain("interlace=scan=tff");
+  });
+
+  describe("timecode counting mode", () => {
+    const vfFor = (format: GenerateOptions["format"]) => {
+      const args = buildCommand(opts({ format, burnTimecode: true })).args;
+      return args[args.indexOf("-vf") + 1];
+    };
+    it("burns drop-frame timecode (';' separator) for the 29.97/59.94 family", () => {
+      expect(vfFor("1080p5994")).toContain("timecode='00\\:00\\:00;00':timecode_rate=60000/1001");
+      expect(vfFor("1080p2997")).toContain("timecode='00\\:00\\:00;00':timecode_rate=30000/1001");
+    });
+    it("burns non-drop timecode (':' separator) for integer rates", () => {
+      expect(vfFor("1080p50")).toContain("timecode='00\\:00\\:00\\:00':timecode_rate=50");
+      expect(vfFor("720p25")).toContain("timecode='00\\:00\\:00\\:00':timecode_rate=25");
+    });
+    it("burns non-drop timecode for 23.98 (no drop-frame standard)", () => {
+      expect(vfFor("1080p2398")).toContain("timecode='00\\:00\\:00\\:00':timecode_rate=24000/1001");
+    });
+    it("counts interlaced timecode at the frame rate, not the field rate", () => {
+      expect(vfFor("1080i50")).toContain("timecode='00\\:00\\:00\\:00':timecode_rate=25");
+      expect(vfFor("1080i5994")).toContain("timecode='00\\:00\\:00;00':timecode_rate=30000/1001");
+    });
+  });
+
   it("omits burn-ins when disabled", () => {
     const vf = buildCommand(opts()).args[
       buildCommand(opts()).args.indexOf("-vf") + 1
@@ -212,6 +251,25 @@ describe("output metadata", () => {
     );
     expect(outputName).toBe("testsrc_720p5994_12s.mov");
     expect(mimeType).toBe("video/quicktime");
+  });
+
+  it("names the file by format id (dot-free even for fractional rates)", () => {
+    expect(buildCommand(opts({ format: "1080p2398" })).outputName).toBe(
+      "smptehdbars_1080p2398_30s.mp4"
+    );
+    expect(buildCommand(opts({ format: "2160p50" })).outputName).toBe(
+      "smptehdbars_2160p50_30s.mp4"
+    );
+  });
+
+  it("clamps duration tighter for large frames (wasm memory budget)", () => {
+    const { args, outputName } = buildCommand(opts({ format: "2160p25", durationSec: 300 }));
+    expect(outputName).toBe("smptehdbars_2160p25_75s.mp4");
+    expect(args[args.indexOf("-t") + 1]).toBe("75");
+    // 1080 keeps the full range
+    expect(buildCommand(opts({ format: "1080p25", durationSec: 300 })).outputName).toBe(
+      "smptehdbars_1080p25_300s.mp4"
+    );
   });
 
   it("adds +faststart only for mp4", () => {
