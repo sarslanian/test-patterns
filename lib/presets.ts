@@ -8,7 +8,20 @@ export type PatternId =
   | "pluge"
   | "fieldsweep"
   | "flicker";
-export type FormatId = "1080p5994" | "1080i5994" | "720p5994";
+export type ResolutionId = "2160" | "1440" | "1080" | "720" | "540" | "360";
+export type RateId =
+  | "p2398"
+  | "p24"
+  | "p25"
+  | "p2997"
+  | "p30"
+  | "p50"
+  | "p5994"
+  | "p60"
+  | "i50"
+  | "i5994";
+/** Composed as `${ResolutionId}${RateId}`, e.g. "1080p5994", "1080i50". */
+export type FormatId = `${ResolutionId}${RateId}`;
 export type ContainerId = "mp4" | "mov" | "ts";
 export type AudioMode = "tone-20" | "tone-18" | "tone-12" | "silence";
 
@@ -83,6 +96,28 @@ export function audioModeById(id: AudioMode): AudioModeDef {
   return AUDIO_MODES.find((a) => a.id === id) ?? AUDIO_MODES[0];
 }
 
+export interface ResolutionDef {
+  id: ResolutionId;
+  label: string;
+  width: number;
+  height: number;
+}
+
+export interface RateDef {
+  id: RateId;
+  /** Rate as shown in the UI dropdown, e.g. "59.94p", "50i" */
+  label: string;
+  /** Numeric part of the label, used to compose format labels ("59.94") */
+  fpsLabel: string;
+  /** lavfi source rate (progressive frame rate before any interlacing) */
+  rate: string;
+  interlaced: boolean;
+  /** drawtext timecode_rate — frame rate the burned timecode counts at */
+  tcRate: string;
+  /** SMPTE drop-frame counting (29.97/59.94 family only) */
+  dropFrame: boolean;
+}
+
 export interface FormatDef {
   id: FormatId;
   label: string;
@@ -93,6 +128,8 @@ export interface FormatDef {
   interlaced: boolean;
   /** drawtext timecode_rate — frame rate the burned timecode counts at */
   tcRate: string;
+  /** SMPTE drop-frame timecode counting (29.97/59.94 family only) */
+  dropFrame: boolean;
 }
 
 export interface PatternDef {
@@ -233,35 +270,56 @@ export const PATTERNS: PatternDef[] = [
   },
 ];
 
-export const FORMATS: FormatDef[] = [
-  {
-    id: "1080p5994",
-    label: "1080p59.94",
-    width: 1920,
-    height: 1080,
-    rate: "60000/1001",
-    interlaced: false,
-    tcRate: "60000/1001",
-  },
-  {
-    id: "1080i5994",
-    label: "1080i59.94",
-    width: 1920,
-    height: 1080,
-    rate: "60000/1001",
-    interlaced: true,
-    tcRate: "30000/1001",
-  },
-  {
-    id: "720p5994",
-    label: "720p59.94",
-    width: 1280,
-    height: 720,
-    rate: "60000/1001",
-    interlaced: false,
-    tcRate: "60000/1001",
-  },
+export const RESOLUTIONS: ResolutionDef[] = [
+  { id: "2160", label: "3840×2160 (UHD 4K)", width: 3840, height: 2160 },
+  { id: "1440", label: "2560×1440 (QHD)", width: 2560, height: 1440 },
+  { id: "1080", label: "1920×1080 (Full HD)", width: 1920, height: 1080 },
+  { id: "720", label: "1280×720 (HD)", width: 1280, height: 720 },
+  { id: "540", label: "960×540", width: 960, height: 540 },
+  { id: "360", label: "640×360", width: 640, height: 360 },
 ];
+
+// Fractional NTSC-family rates (29.97/59.94) count SMPTE drop-frame timecode;
+// everything else — including 23.976, which has no drop-frame standard — counts
+// non-drop. Interlaced rates source at the field rate; the interlace filter
+// halves that to the frame rate, which is what the timecode counts at.
+export const RATES: RateDef[] = [
+  { id: "p2398", label: "23.98p", fpsLabel: "23.98", rate: "24000/1001", interlaced: false, tcRate: "24000/1001", dropFrame: false },
+  { id: "p24", label: "24p", fpsLabel: "24", rate: "24", interlaced: false, tcRate: "24", dropFrame: false },
+  { id: "p25", label: "25p", fpsLabel: "25", rate: "25", interlaced: false, tcRate: "25", dropFrame: false },
+  { id: "p2997", label: "29.97p", fpsLabel: "29.97", rate: "30000/1001", interlaced: false, tcRate: "30000/1001", dropFrame: true },
+  { id: "p30", label: "30p", fpsLabel: "30", rate: "30", interlaced: false, tcRate: "30", dropFrame: false },
+  { id: "p50", label: "50p", fpsLabel: "50", rate: "50", interlaced: false, tcRate: "50", dropFrame: false },
+  { id: "p5994", label: "59.94p", fpsLabel: "59.94", rate: "60000/1001", interlaced: false, tcRate: "60000/1001", dropFrame: true },
+  { id: "p60", label: "60p", fpsLabel: "60", rate: "60", interlaced: false, tcRate: "60", dropFrame: false },
+  { id: "i50", label: "50i", fpsLabel: "50", rate: "50", interlaced: true, tcRate: "25", dropFrame: false },
+  { id: "i5994", label: "59.94i", fpsLabel: "59.94", rate: "60000/1001", interlaced: true, tcRate: "30000/1001", dropFrame: true },
+];
+
+/** Interlaced scanning is only a broadcast standard at 1080 (1080i50/1080i59.94). */
+export function ratesForResolution(res: ResolutionId): RateDef[] {
+  return res === "1080" ? RATES : RATES.filter((r) => !r.interlaced);
+}
+
+/** Compose the canonical format id, e.g. ("1080", "i5994") → "1080i5994". */
+export function composeFormatId(res: ResolutionId, rate: RateId): FormatId {
+  return `${res}${rate}`;
+}
+
+/** Every valid resolution × rate combination (interlaced limited to 1080). */
+export const FORMATS: FormatDef[] = RESOLUTIONS.flatMap((res) =>
+  ratesForResolution(res.id).map((r) => ({
+    id: composeFormatId(res.id, r.id),
+    // Broadcast-style label, e.g. "1080p59.94", "1080i50", "2160p25"
+    label: `${res.id}${r.interlaced ? "i" : "p"}${r.fpsLabel}`,
+    width: res.width,
+    height: res.height,
+    rate: r.rate,
+    interlaced: r.interlaced,
+    tcRate: r.tcRate,
+    dropFrame: r.dropFrame,
+  }))
+);
 
 export interface ContainerDef {
   id: ContainerId;
@@ -288,12 +346,18 @@ export const MIN_DURATION_SEC = 1;
 export const MAX_DURATION_SEC = 300;
 export const DEFAULT_DURATION_SEC = 30;
 
+export const DEFAULT_RESOLUTION: ResolutionId = "1080";
+export const DEFAULT_RATE: RateId = "p5994";
+const DEFAULT_FORMAT: FormatId = composeFormatId(DEFAULT_RESOLUTION, DEFAULT_RATE);
+
 export function patternById(id: PatternId): PatternDef {
   return PATTERNS.find((p) => p.id === id) ?? PATTERNS[0];
 }
 
 export function formatById(id: FormatId): FormatDef {
-  return FORMATS.find((f) => f.id === id) ?? FORMATS[0];
+  return (
+    FORMATS.find((f) => f.id === id) ?? (FORMATS.find((f) => f.id === DEFAULT_FORMAT) as FormatDef)
+  );
 }
 
 export function containerById(id: ContainerId): ContainerDef {

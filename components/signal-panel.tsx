@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import {
   AUDIO_MODES,
   CONTAINERS,
-  FORMATS,
   LOGO_ACCEPT,
   LOGO_OPACITY_PCT,
   LOGO_SIZE_PCT,
@@ -21,8 +20,10 @@ import {
   MAX_DURATION_SEC,
   MIN_DURATION_SEC,
   PATTERNS,
+  RESOLUTIONS,
   formatById,
   patternById,
+  ratesForResolution,
 } from "@/lib/presets";
 import type { TestPatternEngine } from "@/lib/use-test-pattern-engine";
 
@@ -32,8 +33,11 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
   const {
     pattern,
     setPattern,
+    resolution,
+    setResolution,
+    rate,
+    setRate,
     format,
-    setFormat,
     durationText,
     setDurationText,
     container,
@@ -118,17 +122,57 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
               Format
             </Label>
-            <SegmentedGroup
-              ariaLabel="Format"
-              items={FORMATS}
-              value={format}
-              onChange={setFormat}
-              disabled={rendering}
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label
+                  htmlFor="resolution"
+                  className="text-[11px] font-normal text-muted-foreground/70"
+                >
+                  Resolution
+                </Label>
+                <Select
+                  id="resolution"
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value as typeof resolution)}
+                  disabled={rendering}
+                >
+                  {RESOLUTIONS.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label
+                  htmlFor="rate"
+                  className="text-[11px] font-normal text-muted-foreground/70"
+                >
+                  Frame rate
+                </Label>
+                <Select
+                  id="rate"
+                  value={rate}
+                  onChange={(e) => setRate(e.target.value as typeof rate)}
+                  disabled={rendering}
+                >
+                  {ratesForResolution(resolution).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
             {formatById(format).interlaced ? (
               <p className="text-xs text-muted-foreground">
-                Interlaced TFF — encoded with interlaced coding flags; timecode counts at 29.97
-                drop-frame.
+                Interlaced TFF — encoded with interlaced coding flags; timecode counts at{" "}
+                {rate === "i5994" ? "29.97 drop-frame" : "25 fps"}.
+              </p>
+            ) : null}
+            {resolution === "2160" || resolution === "1440" ? (
+              <p className="text-xs text-muted-foreground">
+                Large frames are slow to encode in the browser — expect longer renders.
               </p>
             ) : null}
           </div>
@@ -187,7 +231,11 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 disabled={rendering}
                 className="h-4 w-4 accent-[hsl(var(--primary))]"
               />
-              Running timecode (drop-frame, from 00:00:00;00)
+              Running timecode (
+              {formatById(format).dropFrame
+                ? "drop-frame, from 00:00:00;00"
+                : "non-drop, from 00:00:00:00"}
+              )
             </label>
             <label className="flex items-center gap-2.5 text-sm">
               <input

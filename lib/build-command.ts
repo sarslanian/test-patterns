@@ -65,13 +65,15 @@ export function escapeFilterValue(value: string): string {
   return `'${inner}'`;
 }
 
-function timecodeFilter(tcRate: string, height: number): string {
+function timecodeFilter(tcRate: string, dropFrame: boolean, height: number): string {
   const fontsize = Math.round(height / 15);
   const border = Math.max(6, Math.round(height / 90));
+  // The frame separator selects the counting mode: ';' = SMPTE drop-frame
+  // (29.97/59.94 family only), ':' = non-drop for integer rates and 23.976.
+  const start = dropFrame ? "00:00:00;00" : "00:00:00:00";
   return [
     `drawtext=fontfile=${FONT_FS_PATH}`,
-    // 59.94/29.97 family — drop-frame timecode, ';' frame separator
-    `timecode=${escapeFilterValue("00:00:00;00")}`,
+    `timecode=${escapeFilterValue(start)}`,
     `timecode_rate=${tcRate}`,
     `fontsize=${fontsize}`,
     "fontcolor=white",
@@ -181,7 +183,7 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   // Burn-ins sit ON TOP of the logo so timecode/label/safe-area stay legible.
   const burnIns: string[] = [];
   if (opts.burnTimecode) {
-    burnIns.push(timecodeFilter(format.tcRate, format.height));
+    burnIns.push(timecodeFilter(format.tcRate, format.dropFrame, format.height));
   }
   const label = opts.label.trim();
   if (label.length > 0) {

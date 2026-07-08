@@ -4,12 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AudioMode,
   type ContainerId,
-  type FormatId,
   type PatternId,
+  type RateId,
+  type ResolutionId,
   audioModeById,
+  composeFormatId,
   containerById,
   DEFAULT_DURATION_SEC,
+  DEFAULT_RATE,
+  DEFAULT_RESOLUTION,
   formatById,
+  ratesForResolution,
   LOGO_ACCEPT,
   LOGO_MAX_BYTES,
   LOGO_OPACITY_PCT,
@@ -53,7 +58,22 @@ export type SignalSection = "burnin" | "logo" | "audio";
 
 export function useTestPatternEngine() {
   const [pattern, setPattern] = useState<PatternId>("smptehdbars");
-  const [format, setFormat] = useState<FormatId>("1080p5994");
+  const [resolution, setResolutionState] = useState<ResolutionId>(DEFAULT_RESOLUTION);
+  const [rate, setRate] = useState<RateId>(DEFAULT_RATE);
+  // Interlaced rates only exist at 1080 — leaving it falls back to the
+  // progressive rate at the same speed (i5994 → p5994, i50 → p50).
+  const setResolution = useCallback(
+    (res: ResolutionId) => {
+      setResolutionState(res);
+      setRate((cur) =>
+        ratesForResolution(res).some((r) => r.id === cur)
+          ? cur
+          : (cur.replace(/^i/, "p") as RateId)
+      );
+    },
+    []
+  );
+  const format = composeFormatId(resolution, rate);
   const [durationText, setDurationText] = useState(String(DEFAULT_DURATION_SEC));
   const [container, setContainer] = useState<ContainerId>("mp4");
   const [audio, setAudio] = useState<AudioMode>("tone-20");
@@ -312,8 +332,11 @@ export function useTestPatternEngine() {
   return {
     pattern,
     setPattern,
+    resolution,
+    setResolution,
+    rate,
+    setRate,
     format,
-    setFormat,
     durationText,
     setDurationText,
     container,
