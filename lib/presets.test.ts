@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  coerceRate,
   composeFormatId,
   FORMATS,
   formatById,
+  MAX_DURATION_SEC,
+  maxDurationSecFor,
   RATES,
   ratesForResolution,
   RESOLUTIONS,
@@ -57,5 +60,38 @@ describe("format matrix (RESOLUTIONS × RATES)", () => {
   it("falls back to the default format for unknown ids", () => {
     // e.g. "720i50" composes structurally but isn't a generated combination
     expect(formatById(composeFormatId("720", "i50")).id).toBe("1080p5994");
+  });
+
+  it("output filenames use the id directly — label stripped of dots equals id", () => {
+    // build-command names files by format.id; this pins the id/label relation
+    // so a label change can never silently rename shared files.
+    for (const f of FORMATS) {
+      expect(f.label.replace(/\./g, "")).toBe(f.id);
+    }
+  });
+});
+
+describe("coerceRate", () => {
+  it("passes through rates the resolution offers", () => {
+    expect(coerceRate("720", "p50")).toBe("p50");
+    expect(coerceRate("1080", "i5994")).toBe("i5994");
+  });
+
+  it("falls back to the same-speed progressive rate when interlace is unavailable", () => {
+    expect(coerceRate("720", "i50")).toBe("p50");
+    expect(coerceRate("2160", "i5994")).toBe("p5994");
+  });
+});
+
+describe("maxDurationSecFor (wasm memory budget)", () => {
+  it("keeps the full range at 1080 and below", () => {
+    expect(maxDurationSecFor(formatById("1080p5994"))).toBe(MAX_DURATION_SEC);
+    expect(maxDurationSecFor(formatById("720p50"))).toBe(MAX_DURATION_SEC);
+    expect(maxDurationSecFor(formatById("360p30"))).toBe(MAX_DURATION_SEC);
+  });
+
+  it("caps larger frames proportionally to their area", () => {
+    expect(maxDurationSecFor(formatById("2160p25"))).toBe(75); // 4x 1080p area
+    expect(maxDurationSecFor(formatById("1440p50"))).toBe(168);
   });
 });

@@ -253,12 +253,22 @@ describe("output metadata", () => {
     expect(mimeType).toBe("video/quicktime");
   });
 
-  it("strips dots from fractional-rate labels in the filename", () => {
+  it("names the file by format id (dot-free even for fractional rates)", () => {
     expect(buildCommand(opts({ format: "1080p2398" })).outputName).toBe(
       "smptehdbars_1080p2398_30s.mp4"
     );
     expect(buildCommand(opts({ format: "2160p50" })).outputName).toBe(
       "smptehdbars_2160p50_30s.mp4"
+    );
+  });
+
+  it("clamps duration tighter for large frames (wasm memory budget)", () => {
+    const { args, outputName } = buildCommand(opts({ format: "2160p25", durationSec: 300 }));
+    expect(outputName).toBe("smptehdbars_2160p25_75s.mp4");
+    expect(args[args.indexOf("-t") + 1]).toBe("75");
+    // 1080 keeps the full range
+    expect(buildCommand(opts({ format: "1080p25", durationSec: 300 })).outputName).toBe(
+      "smptehdbars_1080p25_300s.mp4"
     );
   });
 

@@ -8,20 +8,20 @@ import {
   type RateId,
   type ResolutionId,
   audioModeById,
+  coerceRate,
   composeFormatId,
   containerById,
   DEFAULT_DURATION_SEC,
   DEFAULT_RATE,
   DEFAULT_RESOLUTION,
   formatById,
-  ratesForResolution,
+  maxDurationSecFor,
   LOGO_ACCEPT,
   LOGO_MAX_BYTES,
   LOGO_OPACITY_PCT,
   LOGO_POS_DEFAULT,
   LOGO_POSITIONS,
   LOGO_SIZE_PCT,
-  MAX_DURATION_SEC,
   MIN_DURATION_SEC,
   patternById,
 } from "@/lib/presets";
@@ -59,19 +59,17 @@ export type SignalSection = "burnin" | "logo" | "audio";
 export function useTestPatternEngine() {
   const [pattern, setPattern] = useState<PatternId>("smptehdbars");
   const [resolution, setResolutionState] = useState<ResolutionId>(DEFAULT_RESOLUTION);
-  const [rate, setRate] = useState<RateId>(DEFAULT_RATE);
-  // Interlaced rates only exist at 1080 — leaving it falls back to the
-  // progressive rate at the same speed (i5994 → p5994, i50 → p50).
-  const setResolution = useCallback(
-    (res: ResolutionId) => {
-      setResolutionState(res);
-      setRate((cur) =>
-        ratesForResolution(res).some((r) => r.id === cur)
-          ? cur
-          : (cur.replace(/^i/, "p") as RateId)
-      );
-    },
-    []
+  const [rate, setRateState] = useState<RateId>(DEFAULT_RATE);
+  // Both setters coerce through the generated matrix so resolution × rate can
+  // never compose an id FORMATS doesn't contain (e.g. interlaced outside 1080
+  // falls back to the progressive rate at the same speed: i50 → p50).
+  const setResolution = useCallback((res: ResolutionId) => {
+    setResolutionState(res);
+    setRateState((cur) => coerceRate(res, cur));
+  }, []);
+  const setRate = useCallback(
+    (next: RateId) => setRateState(coerceRate(resolution, next)),
+    [resolution]
   );
   const format = composeFormatId(resolution, rate);
   const [durationText, setDurationText] = useState(String(DEFAULT_DURATION_SEC));
@@ -169,11 +167,14 @@ export function useTestPatternEngine() {
   }, []);
 
   const durationNum = Number(durationText);
-  const durationSec = clampDuration(durationNum);
+  // Big frames get a tighter duration cap (wasm memory budget) — see
+  // maxDurationSecFor. The UI surfaces the format-specific max.
+  const maxDurationSec = maxDurationSecFor(formatById(format));
+  const durationSec = clampDuration(durationNum, maxDurationSec);
   const durationValid =
     Number.isFinite(durationNum) &&
     durationNum >= MIN_DURATION_SEC &&
-    durationNum <= MAX_DURATION_SEC;
+    durationNum <= maxDurationSec;
 
   const isLipsync = pattern === "lipsync";
 
@@ -385,6 +386,7 @@ export function useTestPatternEngine() {
 
     durationSec,
     durationValid,
+    maxDurationSec,
     isLipsync,
     summary,
     burnInSummary,

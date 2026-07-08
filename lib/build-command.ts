@@ -13,6 +13,7 @@ import {
   LOGO_SIZE_PCT,
   logoFsPath,
   MAX_DURATION_SEC,
+  maxDurationSecFor,
   MIN_DURATION_SEC,
   patternById,
 } from "./presets";
@@ -103,9 +104,10 @@ function labelFilter(text: string, height: number): string {
   ].join(":");
 }
 
-export function clampDuration(seconds: number): number {
+/** `maxSec` lets large frames pass a tighter cap (see maxDurationSecFor). */
+export function clampDuration(seconds: number, maxSec: number = MAX_DURATION_SEC): number {
   if (!Number.isFinite(seconds)) return MIN_DURATION_SEC;
-  return Math.min(MAX_DURATION_SEC, Math.max(MIN_DURATION_SEC, Math.round(seconds)));
+  return Math.min(maxSec, Math.max(MIN_DURATION_SEC, Math.round(seconds)));
 }
 
 export function clamp(value: number, min: number, max: number, fallback: number): number {
@@ -161,7 +163,7 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const pattern = patternById(opts.pattern);
   const format = formatById(opts.format);
   const container = containerById(opts.container);
-  const duration = clampDuration(opts.durationSec);
+  const duration = clampDuration(opts.durationSec, maxDurationSecFor(format));
 
   const videoSource = pattern.buildSource(format);
   // 1 kHz sine at an exact linear peak amplitude, stereo. (The `sine` source
@@ -198,7 +200,9 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   // a single input with [out0]/[out1] pads yields the same two streams.
   const lavfiInput = `${videoSource}[out0];${audioSource}[out1]`;
 
-  const outputName = `${pattern.id}_${format.label.replace(/\./g, "")}_${duration}s.${container.extension}`;
+  // format.id is the filename-stable identifier (presets.test.ts pins it);
+  // the display label is free to change without renaming shared files.
+  const outputName = `${pattern.id}_${format.id}_${duration}s.${container.extension}`;
 
   const encodeVideo = [
     "-c:v", "libx264",
