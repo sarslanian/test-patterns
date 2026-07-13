@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AudioMode,
+  type AudioLayoutId,
   type ContainerId,
   type PatternId,
   type RateId,
   type ResolutionId,
+  audioLayoutById,
   audioModeById,
   coerceRate,
   composeFormatId,
   containerById,
+  DEFAULT_AUDIO_LAYOUT,
   DEFAULT_DURATION_SEC,
   DEFAULT_RATE,
   DEFAULT_RESOLUTION,
@@ -75,6 +78,7 @@ export function useTestPatternEngine() {
   const [durationText, setDurationText] = useState(String(DEFAULT_DURATION_SEC));
   const [container, setContainer] = useState<ContainerId>("mp4");
   const [audio, setAudio] = useState<AudioMode>("tone-20");
+  const [audioLayout, setAudioLayout] = useState<AudioLayoutId>(DEFAULT_AUDIO_LAYOUT);
   const [burnTimecode, setBurnTimecode] = useState(true);
   const [safeArea, setSafeArea] = useState(false);
   const [slidingBox, setSlidingBox] = useState(false);
@@ -196,7 +200,11 @@ export function useTestPatternEngine() {
     ? `${activePreset ? activePreset.label : `${logoX}%, ${logoY}%`} · ${logoSize}% · ${logoOpacity}%`
     : "None";
 
-  const audioContainerSummary = `${audioModeById(audio).label} · ${containerById(container).label}`;
+  // Lip-sync drives its own stereo beep, so the layout choice doesn't apply.
+  const layoutApplies = !isLipsync && audioLayout !== "stereo";
+  const audioContainerSummary = `${audioModeById(audio).label}${
+    layoutApplies ? ` · ${audioLayoutById(audioLayout).shortLabel}` : ""
+  } · ${containerById(container).label}`;
 
   const summary = useMemo(() => {
     const mode = audioModeById(audio);
@@ -215,6 +223,7 @@ export function useTestPatternEngine() {
             : "silence"
       ),
     ];
+    if (layoutApplies) parts.push(nb(audioLayoutById(audioLayout).shortLabel));
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push(nb("safe areas"));
     if (slidingBox) parts.push(nb("freeze box"));
@@ -230,6 +239,8 @@ export function useTestPatternEngine() {
     format,
     durationSec,
     audio,
+    audioLayout,
+    layoutApplies,
     burnTimecode,
     safeArea,
     slidingBox,
@@ -254,6 +265,7 @@ export function useTestPatternEngine() {
           durationSec,
           container,
           audio,
+          audioLayout,
           burnTimecode,
           label,
           safeArea,
@@ -302,6 +314,7 @@ export function useTestPatternEngine() {
     durationSec,
     container,
     audio,
+    audioLayout,
     burnTimecode,
     label,
     safeArea,
@@ -350,6 +363,8 @@ export function useTestPatternEngine() {
     setContainer,
     audio,
     setAudio,
+    audioLayout,
+    setAudioLayout,
     burnTimecode,
     setBurnTimecode,
     safeArea,
