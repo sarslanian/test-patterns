@@ -96,6 +96,110 @@ export function audioModeById(id: AudioMode): AudioModeDef {
   return AUDIO_MODES.find((a) => a.id === id) ?? AUDIO_MODES[0];
 }
 
+/** Sample rate for every generated audio source. */
+const AUDIO_SR = 48000;
+/** A sine at linear peak `a` and frequency `f` (default 1 kHz), as a lavfi expr. */
+const tone = (a: number, f = 1000) => `${a}*sin(2*PI*${f}*t)`;
+
+/**
+ * Channel layout / line-up content — the axis orthogonal to level. The level
+ * (−20/−18/−12 dBFS or silence) is chosen separately; here you pick how many
+ * channels and what identification content they carry.
+ */
+export type AudioLayoutId = "stereo" | "stereo-intl" | "ebu51" | "blits51";
+
+export interface AudioLayoutDef {
+  id: AudioLayoutId;
+  /** Full label for the dropdown */
+  label: string;
+  /** Compact tag for the one-line summaries, e.g. "5.1 BLITS" */
+  shortLabel: string;
+  /** ffmpeg channel_layout for both the source and silence (e.g. "stereo", "5.1") */
+  channelLayout: string;
+  /** Channel count, matching channelLayout — informational (UI/tests) */
+  channels: number;
+  /** AAC target bitrate, scaled to the channel count */
+  bitrate: string;
+  /**
+   * lavfi audio source for a reference signal at linear peak `amplitude`. The
+   * exprs are single-quoted so the commas inside mod()/lt()/gt() survive the
+   * filter option parser (an unquoted comma is read as an option separator).
+   */
+  buildAudio(amplitude: number): string;
+}
+
+// 5.1 channel order is L R C LFE Ls Rs.
+export const AUDIO_LAYOUTS: AudioLayoutDef[] = [
+  {
+    id: "stereo",
+    label: "Stereo — 1 kHz L+R",
+    shortLabel: "Stereo",
+    channelLayout: "stereo",
+    channels: 2,
+    bitrate: "192k",
+    buildAudio: (a) => `aevalsrc='${tone(a)}|${tone(a)}':s=${AUDIO_SR}`,
+  },
+  {
+    id: "stereo-intl",
+    label: "Stereo — intermittent left",
+    shortLabel: "intermittent L",
+    channelLayout: "stereo",
+    channels: 2,
+    bitrate: "192k",
+    // Left pulses on for 1.5 s of every 3 s, right steady — identifies L vs R
+    // (and a swapped pair) by ear without watching a meter.
+    buildAudio: (a) => `aevalsrc='${tone(a)}*lt(mod(t,3),1.5)|${tone(a)}':s=${AUDIO_SR}`,
+  },
+  {
+    id: "ebu51",
+    label: "5.1 — EBU line-up (1 kHz)",
+    shortLabel: "5.1 EBU",
+    channelLayout: "5.1",
+    channels: 6,
+    bitrate: "384k",
+    // Steady 1 kHz on the five main channels, LFE silent — the standard EBU
+    // line-up reference for checking a 5.1 chain is mapped and passing tone.
+    buildAudio: (a) => {
+      const s = tone(a);
+      return `aevalsrc='${s}|${s}|${s}|0|${s}|${s}':c=5.1:s=${AUDIO_SR}`;
+    },
+  },
+  {
+    id: "blits51",
+    label: "5.1 — BLITS identification",
+    shortLabel: "5.1 BLITS",
+    channelLayout: "5.1",
+    channels: 6,
+    bitrate: "384k",
+    // Practical BLITS-style identification loop (6 s): a 1 kHz line-up on the
+    // five main channels for 2 s, then a sequence of per-channel bursts so each
+    // speaker can be identified in turn, with a 50 Hz burst for the LFE. Not
+    // bit-exact to EBU Tech 3304 timings, but correct for channel-mapping checks.
+    buildAudio: (a) => {
+      const s = tone(a);
+      const s50 = tone(a, 50);
+      const T = "mod(t,6)";
+      const lineup = `lt(${T},2)`; // all main channels during the first 2 s
+      const slot = (x: number, y: number) => `gt(${T},${x})*lt(${T},${y})`;
+      const ch = [
+        `${s}*(${lineup}+${slot(2, 2.6)})`, // L
+        `${s}*(${lineup}+${slot(2.6, 3.2)})`, // R
+        `${s}*(${lineup}+${slot(3.2, 3.8)})`, // C
+        `${s50}*(${slot(3.8, 4.4)})`, // LFE (50 Hz)
+        `${s}*(${lineup}+${slot(4.4, 5)})`, // Ls
+        `${s}*(${lineup}+${slot(5, 5.6)})`, // Rs
+      ];
+      return `aevalsrc='${ch.join("|")}':c=5.1:s=${AUDIO_SR}`;
+    },
+  },
+];
+
+export const DEFAULT_AUDIO_LAYOUT: AudioLayoutId = "stereo";
+
+export function audioLayoutById(id: AudioLayoutId): AudioLayoutDef {
+  return AUDIO_LAYOUTS.find((l) => l.id === id) ?? AUDIO_LAYOUTS[0];
+}
+
 export interface ResolutionDef {
   id: ResolutionId;
   label: string;

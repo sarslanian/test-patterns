@@ -1,9 +1,11 @@
 import {
   type AudioMode,
+  type AudioLayoutId,
   type ContainerId,
   type FormatId,
   type LogoOptions,
   type PatternId,
+  audioLayoutById,
   audioModeById,
   containerById,
   formatById,
@@ -25,7 +27,10 @@ export interface GenerateOptions {
   format: FormatId;
   durationSec: number;
   container: ContainerId;
+  /** Reference level (−20/−18/−12 dBFS or silence) */
   audio: AudioMode;
+  /** Channel layout / line-up content (stereo, intermittent-L, 5.1 EBU/BLITS) */
+  audioLayout: AudioLayoutId;
   burnTimecode: boolean;
   /** Custom overlay label; empty string = no label */
   label: string;
@@ -166,17 +171,21 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const duration = clampDuration(opts.durationSec, maxDurationSecFor(format));
 
   const videoSource = pattern.buildSource(format);
-  // 1 kHz sine at an exact linear peak amplitude, stereo. (The `sine` source
-  // is NOT full scale — it peaks at -18 dBFS — so aevalsrc with an explicit
-  // amplitude is used instead.) Patterns with their own audio (lip-sync beep)
-  // override the mode but keep the selected level; silence falls back to the
-  // -20 dBFS amplitude there, since a silent lip-sync test is meaningless.
+  // Reference tone at an exact linear peak amplitude. (The `sine` source is NOT
+  // full scale — it peaks at -18 dBFS — so aevalsrc with an explicit amplitude
+  // is used instead.) The layout axis decides channel count / line-up content;
+  // its buildAudio emits the (single-quoted) multichannel aevalsrc. Patterns
+  // with their own audio (lip-sync beep) override the layout with a stereo beep
+  // but keep the selected level — a silent lip-sync test is meaningless, so
+  // silence falls back to the -20 dBFS amplitude there. Because lip-sync forces
+  // stereo, the layout collapses to stereo for its bitrate + silence layout too.
+  const layout = pattern.buildAudio ? audioLayoutById("stereo") : audioLayoutById(opts.audioLayout);
   const amplitude = audioModeById(opts.audio).amplitude;
   const audioSource = pattern.buildAudio
     ? pattern.buildAudio(amplitude ?? 0.1)
     : amplitude != null
-      ? `aevalsrc=${amplitude}*sin(2*PI*1000*t)|${amplitude}*sin(2*PI*1000*t):s=48000`
-      : "anullsrc=r=48000:cl=stereo";
+      ? layout.buildAudio(amplitude)
+      : `anullsrc=r=48000:cl=${layout.channelLayout}`;
   // Pattern normalization + interlacing, before any logo is composited.
   const preOverlay: string[] = [...pattern.buildPrefilters(format)];
   if (format.interlaced) {
@@ -214,7 +223,7 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
     "-color_trc", "bt709",
     "-colorspace", "bt709",
   ];
-  const encodeAudio = ["-c:a", "aac", "-b:a", "192k"];
+  const encodeAudio = ["-c:a", "aac", "-b:a", layout.bitrate];
   const faststart = container.id === "mp4" ? ["-movflags", "+faststart"] : [];
 
   // No logo: single lavfi input + a linear -vf chain (the fast path).

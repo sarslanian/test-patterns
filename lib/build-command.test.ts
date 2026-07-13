@@ -17,6 +17,7 @@ function opts(over: Partial<GenerateOptions> = {}): GenerateOptions {
     durationSec: 30,
     container: "mp4",
     audio: "tone-20",
+    audioLayout: "stereo",
     burnTimecode: false,
     label: "",
     safeArea: false,
@@ -241,6 +242,68 @@ describe("buildCommand — logo overlay path", () => {
   it("sanitizes the logo extension into the FS filename", () => {
     const args = buildCommand(opts({ logo: logo({ ext: "JPG" }) })).args;
     expect(args.join(" ")).toContain("-i logo.jpg");
+  });
+});
+
+describe("audio layout (channel line-up)", () => {
+  const audioInput = (over: Partial<GenerateOptions> = {}) => {
+    const args = buildCommand(opts(over)).args;
+    return args[args.indexOf("-i") + 1];
+  };
+  const bitrateOf = (over: Partial<GenerateOptions> = {}) => {
+    const args = buildCommand(opts(over)).args;
+    return args[args.indexOf("-b:a") + 1];
+  };
+
+  it("defaults to a single-quoted stereo 1 kHz tone at 192k", () => {
+    expect(audioInput()).toContain(
+      "aevalsrc='0.1*sin(2*PI*1000*t)|0.1*sin(2*PI*1000*t)':s=48000"
+    );
+    expect(bitrateOf()).toBe("192k");
+  });
+
+  it("intermittent-left gates the left channel (quoted so the comma survives)", () => {
+    expect(audioInput({ audioLayout: "stereo-intl" })).toContain(
+      "aevalsrc='0.1*sin(2*PI*1000*t)*lt(mod(t,3),1.5)|0.1*sin(2*PI*1000*t)':s=48000"
+    );
+  });
+
+  it("EBU 5.1 emits six channels (silent LFE) at 384k, still one input", () => {
+    const args = buildCommand(opts({ audioLayout: "ebu51" })).args;
+    const inp = args[args.indexOf("-i") + 1];
+    expect(inp).toContain(":c=5.1:s=48000");
+    const exprs = inp.match(/aevalsrc='([^']*)'/)![1].split("|");
+    expect(exprs).toHaveLength(6);
+    expect(exprs[3]).toBe("0"); // LFE silent
+    expect(args[args.indexOf("-b:a") + 1]).toBe("384k");
+    // multichannel must stay on the MT-safe single-input fast path
+    expect(countArg(args, "-i")).toBe(1);
+    expect(args).not.toContain("-filter_complex");
+  });
+
+  it("BLITS 5.1 sequences a 6 s identification loop with a 50 Hz LFE burst", () => {
+    const inp = audioInput({ audioLayout: "blits51" });
+    expect(inp).toContain(":c=5.1:s=48000");
+    expect(inp).toContain("mod(t,6)"); // 6 s loop
+    expect(inp).toContain("sin(2*PI*50*t)"); // LFE low tone
+    expect(inp.match(/aevalsrc='([^']*)'/)![1].split("|")).toHaveLength(6);
+  });
+
+  it("makes multichannel silence with the layout's channel_layout", () => {
+    expect(audioInput({ audio: "silence", audioLayout: "ebu51" })).toContain(
+      "anullsrc=r=48000:cl=5.1"
+    );
+    expect(audioInput({ audio: "silence", audioLayout: "stereo" })).toContain(
+      "anullsrc=r=48000:cl=stereo"
+    );
+  });
+
+  it("lip-sync ignores the layout: stereo beep at 192k regardless", () => {
+    const args = buildCommand(opts({ pattern: "lipsync", audioLayout: "blits51" })).args;
+    const inp = args[args.indexOf("-i") + 1];
+    expect(inp).toContain("lt(mod(t,1),0.1)"); // the beep, not BLITS
+    expect(inp).not.toContain("c=5.1");
+    expect(args[args.indexOf("-b:a") + 1]).toBe("192k");
   });
 });
 

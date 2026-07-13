@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUDIO_LAYOUTS,
+  audioLayoutById,
   coerceRate,
   composeFormatId,
   FORMATS,
@@ -68,6 +70,37 @@ describe("format matrix (RESOLUTIONS × RATES)", () => {
     for (const f of FORMATS) {
       expect(f.label.replace(/\./g, "")).toBe(f.id);
     }
+  });
+});
+
+describe("audio layouts", () => {
+  it("offers stereo + multichannel line-ups with matching channel metadata", () => {
+    expect(AUDIO_LAYOUTS.map((l) => l.id)).toEqual([
+      "stereo",
+      "stereo-intl",
+      "ebu51",
+      "blits51",
+    ]);
+    expect(audioLayoutById("stereo").channels).toBe(2);
+    expect(audioLayoutById("ebu51").channels).toBe(6);
+    expect(audioLayoutById("blits51").channelLayout).toBe("5.1");
+  });
+
+  it("single-quotes every aevalsrc so mod()/lt()/gt() commas survive the parser", () => {
+    for (const l of AUDIO_LAYOUTS) {
+      expect(l.buildAudio(0.1).startsWith("aevalsrc='")).toBe(true);
+    }
+  });
+
+  it("emits one expr per channel for each layout", () => {
+    for (const l of AUDIO_LAYOUTS) {
+      const exprs = l.buildAudio(0.1).match(/aevalsrc='([^']*)'/)![1].split("|");
+      expect(exprs).toHaveLength(l.channels);
+    }
+  });
+
+  it("falls back to stereo for an unknown id", () => {
+    expect(audioLayoutById("nope" as never).id).toBe("stereo");
   });
 });
 
