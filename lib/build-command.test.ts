@@ -20,6 +20,7 @@ function opts(over: Partial<GenerateOptions> = {}): GenerateOptions {
     burnTimecode: false,
     label: "",
     safeArea: false,
+    slidingBox: false,
     ...over,
   };
 }
@@ -115,6 +116,40 @@ describe("buildCommand — no-logo fast path", () => {
     it("counts interlaced timecode at the frame rate, not the field rate", () => {
       expect(vfFor("1080i50")).toContain("timecode='00\\:00\\:00\\:00':timecode_rate=25");
       expect(vfFor("1080i5994")).toContain("timecode='00\\:00\\:00;00':timecode_rate=30000/1001");
+    });
+  });
+
+  describe("freeze-detection sliding box", () => {
+    // The box is composited in the source graph (the single lavfi input), not
+    // as a -vf burn-in: drawbox position can't move in this core, so motion has
+    // to be an n-driven overlay with eval=frame (same as field-sweep).
+    const inputFor = (over: Partial<GenerateOptions> = {}) => {
+      const args = buildCommand(opts({ slidingBox: true, ...over })).args;
+      return args[args.indexOf("-i") + 1];
+    };
+    it("overlays an n-driven (frame-locked) marching box only when enabled", () => {
+      expect(inputFor()).toContain("overlay=x='mod(n*8,main_w)':y=929:eval=frame"); // 1920/240 = 8
+      expect(buildCommand(opts()).args[buildCommand(opts()).args.indexOf("-i") + 1]).not.toContain(
+        "mod(n*"
+      );
+    });
+    it("stays inside one lavfi input with the [out0]/[out1] pads (MT-safe)", () => {
+      const args = buildCommand(opts({ slidingBox: true })).args;
+      expect(countArg(args, "-i")).toBe(1);
+      expect(args).not.toContain("-filter_complex"); // still the fast -vf path
+      const input = args[args.indexOf("-i") + 1];
+      expect(input).toContain("[out0]");
+      expect(input).toContain("[out1]");
+    });
+    it("builds a black box with a white inner fill for visibility on any bar", () => {
+      const input = inputFor();
+      expect(input).toContain("color=c=black:size=54x54"); // round(1080*0.05)=54
+      // inner white fill, inset by the 5px border: 54 - 2*5 = 44
+      expect(input).toContain("drawbox=x=5:y=5:w=44:h=44:color=white:thickness=fill");
+    });
+    it("scales the step to frame width so motion reads the same at every size", () => {
+      expect(inputFor({ format: "720p50" })).toContain("mod(n*5,main_w)"); // 1280/240 ≈ 5
+      expect(inputFor({ format: "2160p25" })).toContain("mod(n*16,main_w)"); // 3840/240 = 16
     });
   });
 

@@ -77,6 +77,7 @@ export function useTestPatternEngine() {
   const [audio, setAudio] = useState<AudioMode>("tone-20");
   const [burnTimecode, setBurnTimecode] = useState(true);
   const [safeArea, setSafeArea] = useState(false);
+  const [slidingBox, setSlidingBox] = useState(false);
   const [label, setLabel] = useState("");
 
   const [openSection, setOpenSection] = useState<SignalSection | null>(null);
@@ -186,6 +187,7 @@ export function useTestPatternEngine() {
     const parts: string[] = [];
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push("safe areas");
+    if (slidingBox) parts.push("freeze box");
     if (label.trim()) parts.push(`"${label.trim()}"`);
     return parts.length ? parts.join(", ") : "Off";
   })();
@@ -215,6 +217,7 @@ export function useTestPatternEngine() {
     ];
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push(nb("safe areas"));
+    if (slidingBox) parts.push(nb("freeze box"));
     // User free text stays breakable so a long label can still wrap.
     if (label.trim()) parts.push(`“${label.trim()}”`);
     if (logo) {
@@ -229,6 +232,7 @@ export function useTestPatternEngine() {
     audio,
     burnTimecode,
     safeArea,
+    slidingBox,
     label,
     isLipsync,
     logo,
@@ -253,6 +257,7 @@ export function useTestPatternEngine() {
           burnTimecode,
           label,
           safeArea,
+          slidingBox,
           logo: logo
             ? {
                 data: logo.data,
@@ -300,6 +305,7 @@ export function useTestPatternEngine() {
     burnTimecode,
     label,
     safeArea,
+    slidingBox,
     logo,
     logoX,
     logoY,
@@ -348,6 +354,8 @@ export function useTestPatternEngine() {
     setBurnTimecode,
     safeArea,
     setSafeArea,
+    slidingBox,
+    setSlidingBox,
     label,
     setLabel,
 
