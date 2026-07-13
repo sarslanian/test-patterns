@@ -1,6 +1,7 @@
 import {
   type AudioMode,
   type ContainerId,
+  type FormatDef,
   type FormatId,
   type LogoOptions,
   type PatternId,
@@ -31,6 +32,8 @@ export interface GenerateOptions {
   label: string;
   /** Burn action-safe (93%) / title-safe (90%) boxes + center cross */
   safeArea: boolean;
+  /** Marching freeze-detection box — stops dead if the player/path freezes */
+  slidingBox: boolean;
   /** Uploaded logo to composite over the pattern; omit for none */
   logo?: LogoOptions;
 }
@@ -49,6 +52,38 @@ const SAFE_AREA_FILTERS = [
   "drawbox=x='iw/2-1':y='ih/2-ih*0.04':w=2:h='ih*0.08':color=white@0.6:thickness=fill",
   "drawbox=x='iw/2-iw*0.025':y='ih/2-1':w='iw*0.05':h=2:color=white@0.6:thickness=fill",
 ];
+
+/**
+ * Composite a freeze-detection marker onto the video source: a box that marches
+ * left→right across a lower band, advancing a fixed step every FRAME. On a live
+ * signal it keeps sliding; a frozen player or transmission path stops it dead —
+ * the differentiator over a static pattern like bars, which give a freeze
+ * nothing to reveal it.
+ *
+ * Built the same way field-sweep moves: its own generated source overlaid with
+ * `eval=frame` and an `n`-driven x. drawbox can't do this — in this ffmpeg 5.1
+ * core its position expressions neither see `n` nor re-evaluate per frame (they
+ * carry constant geometry only), so the marker has to be an overlay, not a
+ * burn-in. The box is a black outer square with a white inner fill so it stays
+ * visible over any color bar; size, band and step scale with the frame so the
+ * marker reads the same at every resolution. It rides in the source graph (one
+ * lavfi input, MT-safe) ahead of the Rec.709 prefilters, which leave the
+ * neutral black/white untouched.
+ */
+function withSlidingBox(videoSource: string, f: FormatDef): string {
+  const box = Math.max(12, Math.round(f.height * 0.05));
+  const border = Math.max(2, Math.round(box / 10));
+  const step = Math.max(4, Math.round(f.width / 240));
+  const y = Math.round(f.height * 0.86);
+  // x wraps modulo the base width; the box clips at the right edge and
+  // reappears at the left on the next lap.
+  return (
+    `${videoSource}[fdbase];` +
+    `color=c=black:size=${box}x${box}:rate=${f.rate}` +
+    `,drawbox=x=${border}:y=${border}:w=${box - 2 * border}:h=${box - 2 * border}:color=white:thickness=fill[fdbox];` +
+    `[fdbase][fdbox]overlay=x='mod(n*${step},main_w)':y=${y}:eval=frame`
+  );
+}
 
 /**
  * Quote a value for use inside a filtergraph option (e.g. drawtext text=…).
@@ -165,7 +200,9 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
   const container = containerById(opts.container);
   const duration = clampDuration(opts.durationSec, maxDurationSecFor(format));
 
-  const videoSource = pattern.buildSource(format);
+  const videoSource = opts.slidingBox
+    ? withSlidingBox(pattern.buildSource(format), format)
+    : pattern.buildSource(format);
   // 1 kHz sine at an exact linear peak amplitude, stereo. (The `sine` source
   // is NOT full scale — it peaks at -18 dBFS — so aevalsrc with an explicit
   // amplitude is used instead.) Patterns with their own audio (lip-sync beep)

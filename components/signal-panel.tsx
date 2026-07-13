@@ -48,6 +48,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
     setBurnTimecode,
     safeArea,
     setSafeArea,
+    slidingBox,
+    setSlidingBox,
     label,
     setLabel,
     openSection,
@@ -249,6 +251,16 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 className="h-4 w-4 accent-[hsl(var(--primary))]"
               />
               Safe-area markers (93% action / 90% title + center cross)
+            </label>
+            <label className="flex items-center gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                checked={slidingBox}
+                onChange={(e) => setSlidingBox(e.target.checked)}
+                disabled={rendering}
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+              />
+              Freeze-detection box (marches across — stops if the signal freezes)
             </label>
             <Input
               type="text"
