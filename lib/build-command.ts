@@ -36,6 +36,8 @@ export interface GenerateOptions {
   label: string;
   /** Burn action-safe (93%) / title-safe (90%) boxes + center cross */
   safeArea: boolean;
+  /** Sync pop (2-pop): a one-frame flash + coincident 1 kHz beep at the 2 s mark */
+  syncPop: boolean;
   /** Uploaded logo to composite over the pattern; omit for none */
   logo?: LogoOptions;
 }
@@ -107,6 +109,15 @@ function labelFilter(text: string, height: number): string {
     "x=(w-text_w)/2",
     "y=h*0.08",
   ].join(":");
+}
+
+/** The sync pop (2-pop) sits at the 2 s mark — the classic 48-frames-at-24fps leader beep. */
+const SYNC_POP_SECONDS = 2;
+
+/** Numeric frames-per-second from a rate string like "60000/1001" or "25". */
+export function parseRate(rate: string): number {
+  const [n, d] = rate.split("/").map(Number);
+  return d ? n / d : n;
 }
 
 /** `maxSec` lets large frames pass a tighter cap (see maxDurationSecFor). */
@@ -204,10 +215,38 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
     burnIns.push(...SAFE_AREA_FILTERS);
   }
 
+  // Sync pop (2-pop): a one-frame full-frame flash with a coincident 1 kHz beep
+  // at the 2 s mark, for A/V-sync and leader alignment. Frame-locked so flash
+  // and beep land on the same frame: the flash is gated to exactly frame
+  // `popFrame` (drawbox's `enable` takes `n` — verified by the flicker pattern),
+  // and the beep to that frame's time span. `fps` is the frame rate (tcRate),
+  // which is what encoded frames — and drawbox's `n` — count at.
+  const fps = parseRate(format.tcRate);
+  const popFrame = Math.round(SYNC_POP_SECONDS * fps);
+  if (opts.syncPop) {
+    burnIns.push(`drawbox=color=white:thickness=fill:enable='eq(n,${popFrame})'`);
+  }
+
+  // Audio, plus the sync-pop beep mixed in when enabled. The beep is a 1 kHz
+  // burst on every channel (so it's present in any layout), gated to the pop
+  // frame's time span and summed with `amix=normalize=0` (no attenuation; our
+  // levels can't sum past full scale). A silent audio selection still beeps —
+  // popAmp falls back to -20 dBFS, since a silent 2-pop is pointless.
+  let audioGraph = `${audioSource}[out1]`;
+  if (opts.syncPop) {
+    const popAmp = amplitude ?? 0.1;
+    const popStart = (popFrame / fps).toFixed(4);
+    const popEnd = ((popFrame + 1) / fps).toFixed(4);
+    const blip = `${popAmp}*sin(2*PI*1000*t)*between(t,${popStart},${popEnd})`;
+    const popExprs = Array(layout.channels).fill(blip).join("|");
+    const popSource = `aevalsrc='${popExprs}':c=${layout.channelLayout}:s=48000`;
+    audioGraph = `${audioSource}[abase];${popSource}[apop];[abase][apop]amix=inputs=2:normalize=0[out1]`;
+  }
+
   // Both sources ride one lavfi input as separate output pads. Two -f lavfi
   // inputs deadlock ffmpeg.wasm's multi-threaded core (exec never returns);
   // a single input with [out0]/[out1] pads yields the same two streams.
-  const lavfiInput = `${videoSource}[out0];${audioSource}[out1]`;
+  const lavfiInput = `${videoSource}[out0];${audioGraph}`;
 
   // format.id is the filename-stable identifier (presets.test.ts pins it);
   // the display label is free to change without renaming shared files.

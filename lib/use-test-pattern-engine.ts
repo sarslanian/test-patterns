@@ -81,6 +81,7 @@ export function useTestPatternEngine() {
   const [audioLayout, setAudioLayout] = useState<AudioLayoutId>(DEFAULT_AUDIO_LAYOUT);
   const [burnTimecode, setBurnTimecode] = useState(true);
   const [safeArea, setSafeArea] = useState(false);
+  const [syncPop, setSyncPop] = useState(false);
   const [label, setLabel] = useState("");
 
   const [openSection, setOpenSection] = useState<SignalSection | null>(null);
@@ -190,6 +191,7 @@ export function useTestPatternEngine() {
     const parts: string[] = [];
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push("safe areas");
+    if (syncPop) parts.push("2-pop");
     if (label.trim()) parts.push(`"${label.trim()}"`);
     return parts.length ? parts.join(", ") : "Off";
   })();
@@ -224,6 +226,7 @@ export function useTestPatternEngine() {
     if (layoutApplies) parts.push(nb(audioLayoutById(audioLayout).shortLabel));
     if (burnTimecode) parts.push("timecode");
     if (safeArea) parts.push(nb("safe areas"));
+    if (syncPop) parts.push("2-pop");
     // User free text stays breakable so a long label can still wrap.
     if (label.trim()) parts.push(`“${label.trim()}”`);
     if (logo) {
@@ -240,6 +243,7 @@ export function useTestPatternEngine() {
     layoutApplies,
     burnTimecode,
     safeArea,
+    syncPop,
     label,
     isLipsync,
     logo,
@@ -265,6 +269,7 @@ export function useTestPatternEngine() {
           burnTimecode,
           label,
           safeArea,
+          syncPop,
           logo: logo
             ? {
                 data: logo.data,
@@ -313,6 +318,7 @@ export function useTestPatternEngine() {
     burnTimecode,
     label,
     safeArea,
+    syncPop,
     logo,
     logoX,
     logoY,
@@ -363,6 +369,8 @@ export function useTestPatternEngine() {
     setBurnTimecode,
     safeArea,
     setSafeArea,
+    syncPop,
+    setSyncPop,
     label,
     setLabel,
 

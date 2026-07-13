@@ -51,6 +51,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
     setBurnTimecode,
     safeArea,
     setSafeArea,
+    syncPop,
+    setSyncPop,
     label,
     setLabel,
     openSection,
@@ -252,6 +254,16 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
                 className="h-4 w-4 accent-[hsl(var(--primary))]"
               />
               Safe-area markers (93% action / 90% title + center cross)
+            </label>
+            <label className="flex items-center gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                checked={syncPop}
+                onChange={(e) => setSyncPop(e.target.checked)}
+                disabled={rendering}
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+              />
+              Sync pop (2-pop) — one-frame flash + 1 kHz beep at the 2 s mark
             </label>
             <Input
               type="text"
