@@ -11,6 +11,7 @@ import { AccordionSection } from "@/components/accordion-section";
 import { LogoPlacementPreview } from "@/components/logo-placement-preview";
 import { cn } from "@/lib/utils";
 import {
+  AUDIO_LAYOUTS,
   AUDIO_MODES,
   CONTAINERS,
   LOGO_ACCEPT,
@@ -44,6 +45,8 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
     setContainer,
     audio,
     setAudio,
+    audioLayout,
+    setAudioLayout,
     burnTimecode,
     setBurnTimecode,
     safeArea,
@@ -443,10 +446,10 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
             <div className="flex flex-wrap gap-x-6 gap-y-4">
               <div className="space-y-2">
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Audio (1 kHz)
+                  Level (1 kHz)
                 </Label>
                 <SegmentedGroup
-                  ariaLabel="Audio"
+                  ariaLabel="Level"
                   items={AUDIO_MODES}
                   value={audio}
                   onChange={setAudio}
@@ -467,10 +470,32 @@ export function SignalPanel({ engine }: { engine: TestPatternEngine }) {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label
+                htmlFor="audio-layout"
+                className="text-xs uppercase tracking-wide text-muted-foreground"
+              >
+                Channels / line-up
+              </Label>
+              <Select
+                id="audio-layout"
+                value={audioLayout}
+                onChange={(e) => setAudioLayout(e.target.value as typeof audioLayout)}
+                disabled={rendering || isLipsync}
+              >
+                {AUDIO_LAYOUTS.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             {isLipsync ? (
               <p className="rounded-md border border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                 Lip sync drives its own audio: a 100 ms beep on every flash, at the selected tone
-                level. Silence is ignored (defaults to −20 dBFS).
+                level. Silence is ignored (defaults to −20 dBFS), and the channel line-up is fixed
+                to stereo.
               </p>
             ) : null}
           </AccordionSection>
