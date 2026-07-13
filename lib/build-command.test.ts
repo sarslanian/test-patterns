@@ -370,6 +370,23 @@ describe("output metadata", () => {
     );
   });
 
+  it("tags the filename with the audio line-up, except plain stereo", () => {
+    expect(buildCommand(opts()).outputName).toBe("smptehdbars_1080p5994_30s.mp4"); // stereo: untagged
+    expect(buildCommand(opts({ audioLayout: "ebu51" })).outputName).toBe(
+      "smptehdbars_1080p5994_30s_ebu51.mp4"
+    );
+    expect(buildCommand(opts({ audioLayout: "blits51" })).outputName).toBe(
+      "smptehdbars_1080p5994_30s_blits51.mp4"
+    );
+    expect(buildCommand(opts({ audioLayout: "stereo-intl" })).outputName).toBe(
+      "smptehdbars_1080p5994_30s_stereo-intl.mp4"
+    );
+    // lip-sync forces stereo, so its files stay untagged even with a layout set
+    expect(buildCommand(opts({ pattern: "lipsync", audioLayout: "blits51" })).outputName).toBe(
+      "lipsync_1080p5994_30s.mp4"
+    );
+  });
+
   it("adds +faststart only for mp4", () => {
     expect(buildCommand(opts({ container: "mp4" })).args.join(" ")).toContain("+faststart");
     expect(buildCommand(opts({ container: "ts" })).args.join(" ")).not.toContain("+faststart");
