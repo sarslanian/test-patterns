@@ -211,7 +211,11 @@ export function buildCommand(opts: GenerateOptions): BuiltCommand {
 
   // format.id is the filename-stable identifier (presets.test.ts pins it);
   // the display label is free to change without renaming shared files.
-  const outputName = `${pattern.id}_${format.id}_${duration}s.${container.extension}`;
+  // Tag the file with the audio line-up when it isn't the plain stereo default,
+  // so EBU vs BLITS (etc.) is visible in the name. `layout` already collapses to
+  // stereo for lip-sync, so those files stay untagged too.
+  const audioTag = layout.id === "stereo" ? "" : `_${layout.id}`;
+  const outputName = `${pattern.id}_${format.id}_${duration}s${audioTag}.${container.extension}`;
 
   const encodeVideo = [
     "-c:v", "libx264",
