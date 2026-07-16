@@ -1,9 +1,11 @@
 "use client";
 
+import { useRef } from "react";
 import { Download } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ChannelMeters } from "@/components/channel-meters";
 import { TsPreview } from "@/components/ts-preview";
 import { cn, sanitizeFileName } from "@/lib/utils";
 import type { RenderedFile } from "@/lib/use-test-pattern-engine";
@@ -26,6 +28,7 @@ export function PreviewPanel({
   fileNameParts: { base: string; ext: string };
   downloadName: string;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
   return (
     <Card className="flex w-full min-w-0 flex-1 flex-col border-border/80 shadow-none">
       <CardHeader className="!flex-row flex-wrap items-center justify-between gap-x-4 gap-y-3 space-y-0 border-b border-border/60 pb-4">
@@ -66,7 +69,8 @@ export function PreviewPanel({
           file.nativePlayback ? (
             <>
               <video
-                key={file.url}
+                key={`${file.url}-video`}
+                ref={videoRef}
                 src={file.url}
                 controls
                 loop
@@ -75,9 +79,11 @@ export function PreviewPanel({
                 playsInline
                 className="w-full rounded-md border border-border bg-black"
               />
+              <ChannelMeters key={`${file.url}-meters`} url={file.url} videoRef={videoRef} />
               <p className="text-xs text-muted-foreground">{file.summary}</p>
               <p className="text-xs text-muted-foreground/70">
-                Preview is muted by default — unmute in the player to hear the reference tone.
+                Preview is muted by default — unmute in the player to hear the reference tone. The
+                meters read every channel even while muted.
               </p>
             </>
           ) : (
