@@ -22,6 +22,7 @@ function opts(over: Partial<GenerateOptions> = {}): GenerateOptions {
     label: "",
     safeArea: false,
     slidingBox: false,
+    syncPop: false,
     ...over,
   };
 }
@@ -339,6 +340,61 @@ describe("audio layout (channel line-up)", () => {
     expect(inp).toContain("lt(mod(t,1),0.1)"); // the beep, not BLITS
     expect(inp).not.toContain("c=5.1");
     expect(args[args.indexOf("-b:a") + 1]).toBe("192k");
+  });
+});
+
+describe("sync pop (2-pop)", () => {
+  const vfOf = (over: Partial<GenerateOptions> = {}) => {
+    const args = buildCommand(opts({ syncPop: true, ...over })).args;
+    return args[args.indexOf("-vf") + 1];
+  };
+  const inputOf = (over: Partial<GenerateOptions> = {}) => {
+    const args = buildCommand(opts({ syncPop: true, ...over })).args;
+    return args[args.indexOf("-i") + 1];
+  };
+
+  it("flashes one full frame at the 2 s frame, frame-locked", () => {
+    expect(vfOf()).toContain("drawbox=color=white:thickness=fill:enable='eq(n,120)'"); // round(2*59.94)
+    // disabled → no flash
+    const off = buildCommand(opts()).args;
+    expect(off[off.indexOf("-vf") + 1]).not.toContain("eq(n,");
+  });
+
+  it("locks the pop frame to the frame rate (tcRate), not the field rate", () => {
+    expect(vfOf({ format: "1080p50" })).toContain("enable='eq(n,100)'"); // 2*50
+    expect(vfOf({ format: "1080i50" })).toContain("enable='eq(n,50)'"); // 2*25 (frame rate)
+    expect(vfOf({ format: "720p25" })).toContain("enable='eq(n,50)'");
+  });
+
+  it("mixes a coincident 1 kHz beep over that frame's span without attenuation", () => {
+    const inp = inputOf();
+    expect(inp).toContain("amix=inputs=2:normalize=0[out1]");
+    expect(inp).toContain("between(t,2.0020,2.0187)"); // frame 120's time span at 59.94
+    expect(inp).toContain("0.1*sin(2*PI*1000*t)"); // -20 dBFS default
+  });
+
+  it("beeps on every channel of the selected layout, staying single-input", () => {
+    const args = buildCommand(opts({ syncPop: true, audioLayout: "ebu51" })).args;
+    const inp = args[args.indexOf("-i") + 1];
+    // the pop source matches the 5.1 base so amix lines up channel-for-channel
+    const popSrc = inp.match(/;(aevalsrc='[^']*':c=5\.1:s=48000)\[apop\]/);
+    expect(popSrc).not.toBeNull();
+    expect(popSrc![1].match(/aevalsrc='([^']*)'/)![1].split("|")).toHaveLength(6);
+    expect(countArg(args, "-i")).toBe(1);
+    expect(args).not.toContain("-filter_complex");
+  });
+
+  it("still beeps when the audio selection is silent", () => {
+    const inp = inputOf({ audio: "silence" });
+    expect(inp).toContain("anullsrc=r=48000:cl=stereo[abase]");
+    expect(inp).toContain("0.1*sin(2*PI*1000*t)"); // pop falls back to -20 dBFS
+  });
+
+  it("adds no beep or flash when disabled", () => {
+    const args = buildCommand(opts()).args;
+    const inp = args[args.indexOf("-i") + 1];
+    expect(inp).not.toContain("amix");
+    expect(inp).not.toContain("[apop]");
   });
 });
 
